@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "180998745651",
+    "project_id": "ingredient-usage",
+    "storage_bucket": "ingredient-usage.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:180998745651:android:26c4e4f4b1e976ec7bfd46",
+        "android_client_info": {
+          "package_name": "com.example.ingredient_usage_monitoring_system"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2pnTwwRflu4xAXgMjjdO6h8rJr8lCidU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
