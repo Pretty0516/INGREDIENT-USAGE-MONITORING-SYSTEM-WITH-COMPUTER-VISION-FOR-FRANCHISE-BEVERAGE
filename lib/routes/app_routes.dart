@@ -8,6 +8,7 @@ import '../screens/auth/staff_management_screen.dart';
 import '../screens/auth/staff_login_screen.dart';
 import '../screens/auth/phone_verification_screen.dart';
 import '../screens/auth/password_update_screen.dart';
+import '../screens/auth/verify_account_screen.dart';
 import '../screens/splash_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/suspended_screen.dart';
@@ -19,6 +20,7 @@ class AppRoutes {
   static const String staffManagement = '/staff-management';
   static const String phoneVerification = '/phone-verification';
   static const String passwordUpdate = '/password-update';
+  static const String verifyAccount = '/verify-account';
   static const String dashboard = '/dashboard';
   static const String suspended = '/suspended';
 
@@ -36,7 +38,7 @@ class AppRoutes {
 
         // If user is not authenticated, redirect to login
         if (!authProvider.isAuthenticated) {
-          if (currentLocation != login && currentLocation != franchiseOwnerRegistration) {
+          if (currentLocation != login && currentLocation != franchiseOwnerRegistration && currentLocation != verifyAccount) {
             return login;
           }
           return null;
@@ -147,6 +149,11 @@ class AppRoutes {
               email: user.email,
             );
           },
+        ),
+        GoRoute(
+          path: verifyAccount,
+          name: 'verify-account',
+          builder: (context, state) => const VerifyAccountScreen(),
         ),
         GoRoute(
           path: dashboard,

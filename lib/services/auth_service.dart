@@ -554,6 +554,62 @@ class AuthService {
     await _auth.signOut();
   }
 
+  /// Request password reset by email or phone number.
+  /// If input contains '@', it is treated as an email.
+  /// Otherwise, it looks up the user by `phoneNumber` and sends reset to their email.
+  static Future<AuthResponse> requestPasswordReset(String emailOrPhone) async {
+    try {
+      final input = emailOrPhone.trim();
+      if (input.isEmpty) {
+        return AuthResponse.error(message: 'Please enter contact number or email');
+      }
+
+      // Basic format checks
+      final isEmail = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(input);
+      final normalizedPhoneForCheck = input.replaceAll(RegExp(r'[^0-9]'), '');
+      final isPhone = RegExp(r'^01\d{8,9}$').hasMatch(normalizedPhoneForCheck);
+
+      if (!isEmail && !isPhone) {
+        return AuthResponse.error(message: 'Invalid email or contact number format');
+      }
+
+      if (isEmail) {
+        // Check existence by email in Firestore users collection
+        final qs = await _firestore
+            .collection(_usersCollection)
+            .where('email', isEqualTo: input)
+            .limit(1)
+            .get();
+        if (qs.docs.isEmpty) {
+          return AuthResponse.error(message: 'This account does not exist');
+        }
+        // Send reset link
+        await _auth.sendPasswordResetEmail(email: input);
+        return AuthResponse.success(message: 'Your account exists, a reset link has been sent');
+      }
+
+      // Phone path
+      final normalizedPhone = normalizedPhoneForCheck;
+      final qs = await _firestore
+          .collection(_usersCollection)
+          .where('phoneNumber', isEqualTo: normalizedPhone)
+          .limit(1)
+          .get();
+      if (qs.docs.isEmpty) {
+        return AuthResponse.error(message: 'This account does not exist');
+      }
+      final data = qs.docs.first.data();
+      final email = data['email'] as String?;
+      if (email == null || email.isEmpty) {
+        return AuthResponse.error(message: 'This account does not exist');
+      }
+      await _auth.sendPasswordResetEmail(email: email);
+      return AuthResponse.success(message: 'Your account exists, a reset link has been sent');
+    } catch (e) {
+      return AuthResponse.error(message: 'Failed to process request: $e');
+    }
+  }
+
   /// Helper methods
   static String _hashPassword(String password) {
     final bytes = utf8.encode(password);

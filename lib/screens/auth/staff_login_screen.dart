@@ -131,7 +131,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                 onPressed: _isLoading
                                     ? null
                                     : () {
-                                        context.go('/password-update');
+                                        context.go('/verify-account');
                                       },
                                 child: const Text(
                                   ' Click Here',
