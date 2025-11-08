@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/auth_models.dart';
 import '../../models/user_model.dart';
+import '../../routes/app_routes.dart';
 
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
@@ -23,6 +24,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _rememberMe = false;
+  bool _skipSetup = false;
   Map<String, dynamic> _initialFormValues = const {
     'email': '',
     'password': '',
@@ -288,6 +290,27 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  value: _skipSetup,
+                  onChanged: (v) {
+                    setState(() => _skipSetup = v ?? false);
+                  },
+                  activeColor: const Color(0xFFDC711F),
+                  side: const BorderSide(color: Color(0xFFDC711F)),
+                ),
+                const Text(
+                  'Skip verification (dev)',
+                  style: TextStyle(fontSize: 16),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -313,6 +336,26 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : _seedSupervisor,
+              icon: const Icon(Icons.add_circle_outline),
+              label: const Text(
+                'Add Supervisor (Seed)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDC711F),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ),
         ],
@@ -407,68 +450,123 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         password: formData['password'],
       );
 
-      final response = await AuthService.staffLogin(loginRequest);
+      // Try staff login first
+      final staffResp = await AuthService.staffLogin(loginRequest);
 
-      if (response.success) {
+      if (staffResp.success) {
         final user = await AuthService.getCurrentUserData();
-        
         if (user == null) {
           throw Exception('Failed to get user data');
         }
-        
-        // Check if user is staff
-        if (user.role != UserRole.staff) {
-          throw Exception('This login is for staff members only');
+        // Allow staff and supervisors
+        if (user.role != UserRole.staff && user.role != UserRole.supervisor) {
+          throw Exception('Invalid login method for this account type');
         }
 
-        // Persist or clear credentials based on Remember Me
         if (_rememberMe) {
           await _persistCredentials(loginRequest.email, loginRequest.password);
         } else {
           await _clearCredentials();
         }
 
-        // Navigate based on user status
         if (mounted) {
+          if (_skipSetup) {
+            // Enable dev bypass and navigate directly
+            final authProvider = Provider.of<AuthProvider>(context, listen: false);
+            authProvider.setDevBypass(true);
+            context.go(AppRoutes.dashboard);
+            return;
+          }
           switch (user.status) {
             case UserStatus.pending:
             case UserStatus.emailVerified:
-              // Need to verify phone number
               context.go('/phone-verification');
               break;
-              
             case UserStatus.phoneVerified:
-              // Need to update password
               context.go('/password-update');
               break;
-              
             case UserStatus.active:
-              // Fully set up, go to main app
+              // Supervisors and staff both head to dashboard
               context.go('/dashboard');
               break;
-              
             case UserStatus.suspended:
               throw Exception('Your account has been suspended. Please contact your franchise owner.');
           }
         }
       } else {
-        final code = response.errorCode ?? '';
-        String msg;
-        if (code == 'account-suspended') {
-          msg = 'Your account has been suspended. Please contact your franchise owner.';
-        } else if (code == 'invalid-email') {
-          msg = 'Please enter a valid email address.';
-        } else if (code == 'invalid-credential' || code == 'wrong-password' || code == 'user-not-found') {
-          msg = 'Incorrect email or password.';
-        } else if (code == 'too-many-requests') {
-          msg = 'Too many attempts. Try again later.';
+        // If the account is not a staff account, attempt franchise owner login
+        final isWrongMethod = (staffResp.message ?? '').contains('Invalid login method for this account type');
+        if (isWrongMethod) {
+          final ownerResp = await AuthService.franchiseOwnerLogin(loginRequest);
+          if (ownerResp.success) {
+            final user = await AuthService.getCurrentUserData();
+            if (user == null) {
+              throw Exception('Failed to get user data');
+            }
+            if (user.role != UserRole.franchiseOwner) {
+              throw Exception('Invalid login method for this account type');
+            }
+
+            if (_rememberMe) {
+              await _persistCredentials(loginRequest.email, loginRequest.password);
+            } else {
+              await _clearCredentials();
+            }
+
+            // Navigate franchise owners to Staff Management
+            final fid = user.franchiseId;
+            if (mounted) {
+              if (_skipSetup) {
+                final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                authProvider.setDevBypass(true);
+              }
+              if (fid != null && fid.isNotEmpty) {
+                context.go('${AppRoutes.staffManagement}?franchiseId=$fid');
+              } else {
+                // Fallback to dashboard if franchise ID missing
+                context.go(AppRoutes.dashboard);
+              }
+            }
+          } else {
+            // Show original error message for staff login
+            final code = staffResp.errorCode ?? '';
+            String msg;
+            if (code == 'account-suspended') {
+              msg = 'Your account has been suspended. Please contact your franchise owner.';
+            } else if (code == 'invalid-email') {
+              msg = 'Please enter a valid email address.';
+            } else if (code == 'invalid-credential' || code == 'wrong-password' || code == 'user-not-found') {
+              msg = 'Incorrect email or password.';
+            } else if (code == 'too-many-requests') {
+              msg = 'Too many attempts. Try again later.';
+            } else {
+              msg = staffResp.message ?? 'Incorrect email or password.';
+            }
+            if (mounted) {
+              _showErrorDialog(msg);
+            }
+            return;
+          }
         } else {
-          msg = response.message ?? 'Incorrect email or password.';
+          // Not a role mismatch; show staff login error
+          final code = staffResp.errorCode ?? '';
+          String msg;
+          if (code == 'account-suspended') {
+            msg = 'Your account has been suspended. Please contact your franchise owner.';
+          } else if (code == 'invalid-email') {
+            msg = 'Please enter a valid email address.';
+          } else if (code == 'invalid-credential' || code == 'wrong-password' || code == 'user-not-found') {
+            msg = 'Incorrect email or password.';
+          } else if (code == 'too-many-requests') {
+            msg = 'Too many attempts. Try again later.';
+          } else {
+            msg = staffResp.message ?? 'Incorrect email or password.';
+          }
+          if (mounted) {
+            _showErrorDialog(msg);
+          }
+          return;
         }
-        if (mounted) {
-          _showErrorDialog(msg);
-        }
-        return;
       }
     } catch (e) {
       if (mounted) {
@@ -503,6 +601,48 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       if (mounted) {
         _showErrorDialog('Logout failed: $e');
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _seedSupervisor() async {
+    try {
+      setState(() => _isLoading = true);
+      // Use current form email if available, otherwise let service generate a unique email
+      _formKey.currentState?.save();
+      final values = _formKey.currentState?.value ?? {};
+      final email = (values['email'] as String?)?.trim();
+
+      final resp = await AuthService.seedSupervisorUser(email: email);
+      if (resp.success) {
+        final data = resp.data ?? {};
+        final seededEmail = (data['email'] ?? '') as String;
+        final tempPassword = (data['temporaryPassword'] ?? '') as String;
+        final fid = (data['franchiseId'] ?? '') as String;
+
+        // Prefill credentials so you can immediately log in
+        _initialFormValues = {
+          'email': seededEmail,
+          'password': tempPassword,
+        };
+        _formKey.currentState?.reset();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Supervisor created for franchise $fid. Temp password: $tempPassword'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else {
+        final msg = resp.message ?? 'Failed to seed supervisor';
+        if (mounted) _showErrorDialog(msg);
+      }
+    } catch (e) {
+      if (mounted) _showErrorDialog('Failed to seed supervisor: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

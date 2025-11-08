@@ -19,6 +19,7 @@ class AuthProvider extends ChangeNotifier {
   UserModel? _currentUser;
   FranchiseModel? _currentFranchise;
   String? _errorMessage;
+  bool _devBypass = false;
   
   // Getters
   AuthState get state => _state;
@@ -28,6 +29,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _state == AuthState.authenticated && _currentUser != null;
   bool get isLoading => _state == AuthState.loading;
   bool get hasError => _state == AuthState.error;
+  bool get devBypass => _devBypass;
 
   // Firebase Auth instance
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
@@ -53,11 +55,52 @@ class AuthProvider extends ChangeNotifier {
       _setState(AuthState.loading);
       
       // Get user document from Firestore
-      final userDoc = await _firestore.collection('users').doc(userId).get();
+      DocumentSnapshot<Map<String, dynamic>>? userDoc = await _firestore.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        // Fallback: find by email if document id != Firebase UID
+        final email = _firebaseAuth.currentUser?.email;
+        if (email != null) {
+          final byEmail = await _firestore
+              .collection('users')
+              .where('email', isEqualTo: email)
+              .limit(1)
+              .get();
+          if (byEmail.docs.isNotEmpty) {
+            userDoc = byEmail.docs.first;
+          }
+        }
+      }
       
       if (userDoc.exists) {
         _currentUser = UserModel.fromMap(userDoc.data()!);
         
+        // Ensure franchise linkage is present for franchise owners
+        if (_currentUser!.franchiseId == null || _currentUser!.franchiseId!.isEmpty) {
+          // Fallback: derive franchise by ownerId for franchise owners
+          if (_currentUser!.role == UserRole.franchiseOwner) {
+            try {
+              final owned = await _firestore
+                  .collection('franchises')
+                  .where('ownerId', isEqualTo: _currentUser!.id)
+                  .limit(1)
+                  .get();
+              if (owned.docs.isNotEmpty) {
+                final fdoc = owned.docs.first;
+                _currentFranchise = FranchiseModel.fromMap(fdoc.data());
+                // Update local user model to include franchiseId
+                _currentUser = _currentUser!.copyWith(franchiseId: fdoc.id);
+                // Persist franchiseId on user document for future loads (best-effort)
+                try {
+                  await _firestore.collection('users').doc(_currentUser!.id).update({'franchiseId': fdoc.id});
+                } catch (_) {}
+              }
+            } catch (e) {
+              // Graceful fallback; leave franchiseId unset if lookup fails
+              debugPrint('Fallback franchise lookup failed: $e');
+            }
+          }
+        }
+
         // Load franchise data if user has a franchise
         if (_currentUser!.franchiseId != null && _currentUser!.franchiseId!.isNotEmpty) {
           await _loadFranchiseData(_currentUser!.franchiseId!);
@@ -128,16 +171,22 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // Dev bypass to skip setup checks (phone verification, password update)
+  void setDevBypass(bool enabled) {
+    _devBypass = enabled;
+    notifyListeners();
+  }
+
   // Helper methods for checking user status and permissions
   bool get isStaff => _currentUser?.role == UserRole.staff;
   bool get isFranchiseOwner => _currentUser?.role == UserRole.franchiseOwner;
   
-  bool get needsPhoneVerification => 
+  bool get needsPhoneVerification => !_devBypass && (
       _currentUser?.status == UserStatus.pending || 
-      _currentUser?.status == UserStatus.emailVerified;
+      _currentUser?.status == UserStatus.emailVerified);
   
-  bool get needsPasswordUpdate => 
-      _currentUser?.status == UserStatus.phoneVerified;
+  bool get needsPasswordUpdate => !_devBypass && (
+      _currentUser?.status == UserStatus.phoneVerified);
   
   bool get isFullySetup => _currentUser?.status == UserStatus.active;
   

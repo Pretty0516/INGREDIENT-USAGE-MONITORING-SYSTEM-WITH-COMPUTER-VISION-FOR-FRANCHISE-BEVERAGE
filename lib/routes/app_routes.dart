@@ -30,6 +30,7 @@ class AppRoutes {
       redirect: (context, state) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final currentLocation = state.matchedLocation;
+        final devBypass = authProvider.devBypass;
 
         // If on splash screen, let it handle the navigation
         if (currentLocation == splash) {
@@ -44,7 +45,7 @@ class AppRoutes {
           return null;
         }
 
-        // If user is authenticated, check their status
+        // If user is authenticated, check their status (respect dev bypass)
         if (authProvider.isAuthenticated) {
           // If suspended, redirect to suspended screen
           if (authProvider.isSuspended) {
@@ -55,7 +56,7 @@ class AppRoutes {
           }
 
           // If needs phone verification
-          if (authProvider.needsPhoneVerification) {
+          if (!devBypass && authProvider.needsPhoneVerification) {
             if (currentLocation != phoneVerification) {
               return phoneVerification;
             }
@@ -63,7 +64,7 @@ class AppRoutes {
           }
 
           // If needs password update
-          if (authProvider.needsPasswordUpdate) {
+          if (!devBypass && authProvider.needsPasswordUpdate) {
             if (currentLocation != passwordUpdate) {
               return passwordUpdate;
             }
@@ -71,9 +72,16 @@ class AppRoutes {
           }
 
           // If fully setup, redirect away from setup flows but allow login for logout
-          if (authProvider.isFullySetup) {
+          if (authProvider.isFullySetup || devBypass) {
             if (currentLocation == phoneVerification || 
                 currentLocation == passwordUpdate) {
+              // Franchise owners land on Staff Management; staff on Dashboard
+              if (authProvider.isFranchiseOwner) {
+                final fid = authProvider.currentUser?.franchiseId;
+                if (fid != null && fid.isNotEmpty) {
+                  return '$staffManagement?franchiseId=$fid';
+                }
+              }
               return dashboard;
             }
             // Keep login accessible to allow unified login/logout screen across devices

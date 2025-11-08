@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UserRole { franchiseOwner, staff }
+enum UserRole { franchiseOwner, staff, supervisor }
 
 enum UserStatus { 
   pending,        // Staff registered but not verified
@@ -65,6 +65,34 @@ class UserModel {
 
   // Create from Firestore document
   factory UserModel.fromMap(Map<String, dynamic> map) {
+    // Derive franchiseId from multiple schema options
+    String? derivedFranchiseId = map['franchiseId'];
+    if ((derivedFranchiseId == null || derivedFranchiseId.isEmpty) && map['franchiseID'] is Map<String, dynamic>) {
+      final fi = map['franchiseID'] as Map<String, dynamic>;
+      // Prefer DocumentReference under 'franchise' when available
+      final ref = fi['franchise'];
+      if (ref is DocumentReference) {
+        derivedFranchiseId = ref.id;
+      } else {
+        // Then prefer explicit 'id'
+        final idField = fi['id'];
+        if (idField is String && idField.isNotEmpty) {
+          derivedFranchiseId = idField;
+        } else {
+          // Arrays for multi-franchise owners
+          final ids = fi['ids'];
+          if (ids is List && ids.isNotEmpty && ids.first is String) {
+            derivedFranchiseId = ids.first as String;
+          } else {
+            final refs = fi['franchises'];
+            if (refs is List && refs.isNotEmpty && refs.first is DocumentReference) {
+              derivedFranchiseId = (refs.first as DocumentReference).id;
+            }
+          }
+        }
+      }
+    }
+
     return UserModel(
       id: map['id'] ?? '',
       email: map['email'] ?? '',
@@ -79,7 +107,7 @@ class UserModel {
         orElse: () => UserStatus.pending,
       ),
       phoneNumber: map['phoneNumber'],
-      franchiseId: map['franchiseId'],
+      franchiseId: derivedFranchiseId,
       createdAt: (map['createdAt'] as Timestamp).toDate(),
       lastLoginAt: map['lastLoginAt'] != null 
           ? (map['lastLoginAt'] as Timestamp).toDate() 

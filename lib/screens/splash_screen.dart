@@ -58,7 +58,17 @@ class _SplashScreenState extends State<SplashScreen> {
     } else if (authProvider.needsPasswordUpdate) {
       context.go(AppRoutes.passwordUpdate);
     } else if (authProvider.isFullySetup) {
-      context.go(AppRoutes.dashboard);
+      // Franchise owners should land on Staff Management
+      if (authProvider.isFranchiseOwner) {
+        final fid = authProvider.currentUser?.franchiseId;
+        if (fid != null && fid.isNotEmpty) {
+          context.go('${AppRoutes.staffManagement}?franchiseId=$fid');
+        } else {
+          context.go(AppRoutes.dashboard);
+        }
+      } else {
+        context.go(AppRoutes.dashboard);
+      }
     } else {
       // Fallback to login
       context.go(AppRoutes.login);

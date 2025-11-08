@@ -181,6 +181,89 @@ class AuthService {
     }
   }
 
+  /// Seed a supervisor user for testing via the login screen
+  static Future<AuthResponse> seedSupervisorUser({
+    String? email,
+    String firstName = 'Supervisor',
+    String lastName = 'User',
+  }) async {
+    try {
+      // Determine target franchise: use the first franchise document found
+      final franchisesSnap = await _firestore.collection(_franchisesCollection).limit(1).get();
+      if (franchisesSnap.docs.isEmpty) {
+        return AuthResponse.error(message: 'No franchises found. Please create a franchise first.');
+      }
+      final franchiseDoc = franchisesSnap.docs.first;
+      final franchiseId = franchiseDoc.id;
+      final franchiseRef = _firestore.collection(_franchisesCollection).doc(franchiseId);
+
+      // Choose email: passed-in or default unique email
+      final targetEmail = (email == null || email.isEmpty)
+          ? 'supervisor_${DateTime.now().millisecondsSinceEpoch}@example.com'
+          : email.trim();
+
+      // Check if email already exists
+      final existing = await _firestore
+          .collection(_usersCollection)
+          .where('email', isEqualTo: targetEmail)
+          .limit(1)
+          .get();
+      if (existing.docs.isNotEmpty) {
+        return AuthResponse.error(message: 'Email already exists: $targetEmail');
+      }
+
+      // Generate temporary password and hash (SHA-256)
+      final temporaryPassword = EmailService.generateTemporaryPassword();
+      final hashedTemp = _hashPassword(temporaryPassword);
+
+      // Create Firebase Auth user immediately so status can be active
+      final userCredential = await _auth.createUserWithEmailAndPassword(
+        email: targetEmail,
+        password: temporaryPassword,
+      );
+      final supervisorUid = userCredential.user!.uid;
+
+      // Create supervisor user document with active status and temp password metadata
+      final now = Timestamp.fromDate(DateTime.now());
+      final userData = {
+        'id': supervisorUid,
+        'email': targetEmail,
+        'firstName': firstName,
+        'lastName': lastName,
+        'role': 'supervisor',
+        'status': 'active',
+        'phoneNumber': null,
+        // Legacy string for compatibility
+        'franchiseId': franchiseId,
+        'createdAt': now,
+        'lastLoginAt': null,
+        'isTemporaryPassword': true,
+        'metadata': {
+          'hashedTempPassword': hashedTemp,
+        },
+        // Map-based schema for compatibility
+        'franchiseID': {
+          'franchise': franchiseRef,
+          'id': franchiseId,
+        },
+      };
+
+      await _firestore.collection(_usersCollection).doc(supervisorUid).set(userData);
+
+      return AuthResponse.success(
+        message: 'Supervisor user created',
+        data: {
+          'userId': supervisorUid,
+          'email': targetEmail,
+          'temporaryPassword': temporaryPassword,
+          'franchiseId': franchiseId,
+        },
+      );
+    } catch (e) {
+      return AuthResponse.error(message: 'Failed to seed supervisor: $e');
+    }
+  }
+
   /// Staff login with email and temporary password
   static Future<AuthResponse> staffLogin(LoginRequest request) async {
     try {
@@ -197,8 +280,8 @@ class AuthService {
       final userDoc = userQuery.docs.first;
       final userData = UserModel.fromMap(userDoc.data());
 
-      // Check if user is staff
-      if (userData.role != UserRole.staff) {
+      // Allow staff and supervisors to use this login
+      if (userData.role != UserRole.staff && userData.role != UserRole.supervisor) {
         return AuthResponse.error(message: 'Invalid login method for this account type');
       }
 
@@ -257,7 +340,7 @@ class AuthService {
           return AuthResponse.error(message: 'Invalid email or password');
         }
 
-        // Create Firebase Auth account for first-time login
+        // Create Firebase Auth account for first-time login (staff or supervisor)
         if (userData.status == UserStatus.pending) {
           try {
             final userCredential = await _auth.createUserWithEmailAndPassword(
@@ -373,9 +456,26 @@ class AuthService {
 
       final user = userCredential.user!;
       
-      // Get user data
-      final userDoc = await _firestore.collection(_usersCollection).doc(user.uid).get();
-      if (!userDoc.exists) {
+      // Get user data: prefer doc by uid; fallback to email-based query
+      DocumentSnapshot<Map<String, dynamic>>? userDoc;
+      final byUid = await _firestore.collection(_usersCollection).doc(user.uid).get();
+      if (byUid.exists) {
+        userDoc = byUid;
+      } else {
+        final email = user.email;
+        if (email != null) {
+          final byEmail = await _firestore
+              .collection(_usersCollection)
+              .where('email', isEqualTo: email)
+              .limit(1)
+              .get();
+          if (byEmail.docs.isNotEmpty) {
+            userDoc = byEmail.docs.first;
+          }
+        }
+      }
+
+      if (userDoc == null || !userDoc.exists) {
         await _auth.signOut();
         return AuthResponse.error(message: 'User data not found');
       }
@@ -388,13 +488,13 @@ class AuthService {
       }
 
       // Update last login
-      await _firestore.collection(_usersCollection).doc(user.uid).update({
+      await _firestore.collection(_usersCollection).doc(userDoc.id).update({
         'lastLoginAt': Timestamp.fromDate(DateTime.now()),
       });
 
       return AuthResponse.success(
         message: 'Login successful',
-        data: {'userId': user.uid, 'role': 'franchiseOwner'},
+        data: {'userId': userDoc.id, 'role': 'franchiseOwner'},
       );
     } on FirebaseAuthException catch (e) {
       return AuthResponse.error(
