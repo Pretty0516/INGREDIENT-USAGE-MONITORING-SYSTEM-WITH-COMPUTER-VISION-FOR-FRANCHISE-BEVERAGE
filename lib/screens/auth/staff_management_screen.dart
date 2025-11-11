@@ -1,3 +1,4 @@
+// staff management screen for franchise owner
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:provider/provider.dart';
@@ -9,6 +10,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/user_model.dart';
 import '../../models/franchise_model.dart';
 import '../../services/auth_service.dart';
+import 'view_staff_screen.dart';
+import 'register_staff_screen.dart';
+import '../../widgets/app_shell.dart';
 
 class StaffManagementScreen extends StatefulWidget {
   final String franchiseId;
@@ -23,20 +27,33 @@ class StaffManagementScreen extends StatefulWidget {
 }
 
 class _StaffManagementScreenState extends State<StaffManagementScreen> {
-  final _formKey = GlobalKey<FormBuilderState>();
-  bool _isAddingStaff = false;
-  FranchiseModel? _franchise;
-  List<UserModel> _staffMembers = [];
+  final _formKey = GlobalKey<FormBuilderState>(); // check form validation
+  bool _isAddingStaff = false; // check if adding staff
+  FranchiseModel? _franchise; // franchise data
+  List<UserModel> _staffMembers = []; // staff members data
+
   // Filters & pagination
   String _searchQuery = '';
-  String _selectedRole = 'Staff'; // Only Staff and Supervisor selectable
-  String _selectedStatus = 'All Status'; // All Status, Active, Pending, Suspended
+  String _selectedRole = 'All Roles'; // Default to All Roles
+  String _selectedStatus = 'All Status'; // Default to All Status
   int _currentPage = 1;
-  final int _pageSize = 10;
+  final int _pageSize = 10; // pagination set the record for 10 per page
+  // toggle menu bar
+  bool _isSideNavOpen = true;
 
-  // Custom menu overlay for Status filter
+  // Custom menu overlay for filter
   final GlobalKey _statusFilterKey = GlobalKey();
   OverlayEntry? _statusMenuOverlay;
+  final GlobalKey _outletFilterKey = GlobalKey();
+  OverlayEntry? _outletMenuOverlay;
+  final GlobalKey _rolesFilterKey = GlobalKey();
+  OverlayEntry? _rolesMenuOverlay;
+
+  // Layer links to anchor overlays to filter widgets
+  final LayerLink _statusLink = LayerLink();
+  final LayerLink _outletLink = LayerLink();
+  final LayerLink _rolesLink = LayerLink();
+  bool _isApplying = false;
 
   @override
   void initState() {
@@ -45,6 +62,15 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     _loadStaffMembers();
   }
 
+  @override
+  void dispose() {
+    _statusMenuOverlay?.remove();
+    _outletMenuOverlay?.remove();
+    _rolesMenuOverlay?.remove();
+    super.dispose();
+  }
+
+  // retrieve the franchise data from firebase
   Future<void> _loadFranchiseData() async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -62,19 +88,13 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     }
   }
 
+  // retrieve the members data from firebase
   Future<void> _loadStaffMembers() async {
     try {
       final users = FirebaseFirestore.instance.collection('users');
-
-      // We support multiple possible schemas:
-      // 1) Legacy string field: `franchiseId: <id>`
-      // 2) Map field: `franchiseID.franchise: <id>` (string)
-      // 3) Map field: `franchiseID.franchise: <DocumentReference>`
-      // And we include both staff and supervisor roles.
-
       final List<QuerySnapshot<Map<String, dynamic>>> snapshots = [];
 
-      // Legacy string franchiseId
+      // franchiseId check
       snapshots.add(
         await users
             .where('franchiseId', isEqualTo: widget.franchiseId)
@@ -82,7 +102,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
             .get(),
       );
 
-      // Map with string id
+      // franchises for the franchise owner
       snapshots.add(
         await users
             .where('franchiseID.franchise', isEqualTo: widget.franchiseId)
@@ -90,7 +110,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
             .get(),
       );
 
-      // Map with DocumentReference
+      // check for franchises where member belongs to
       final franchiseRef = FirebaseFirestore.instance
           .collection('franchises')
           .doc(widget.franchiseId);
@@ -131,300 +151,156 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     // Access current user for header
     final authProvider = context.watch<AuthProvider>();
     final currentUserModel = authProvider.currentUser;
-    // Pre-compute filtered and paginated lists — avoid declarations inside widget lists
+    // paginated lists
     final filtered = _getFilteredMembers();
     final displayed = _paginate(filtered);
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(72),
-        child: Container(
-          color: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: SafeArea(
-            bottom: false,
-            child: Row(
-              children: [
-                // Profile icon
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: Colors.green[100],
-                  child: Text(
-                    _initials(currentUserModel?.firstName, currentUserModel?.lastName),
-                    style: TextStyle(
-                      color: Colors.green[700],
-                      fontWeight: FontWeight.bold,
-                    ),
+
+    // check the screen size for responsive navigation bar
+    final isLaptop = MediaQuery.of(context).size.width >= 1024;
+    // computer the pagination total pages
+    final totalPages = (filtered.length / _pageSize).ceil();
+
+    return AppShell(
+      activeItem: 'Staff',
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top Filters & Register Staff Button
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12.0),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    spreadRadius: 1,
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                ),
-                const SizedBox(width: 12),
-                // Name and login time
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
                     children: [
-                      Text(
-                        currentUserModel?.fullName ?? 'User',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      // Search (light grey, borderless)
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: TextField(
+                            decoration: const InputDecoration(
+                              hintText: 'Search Staff Name',
+                              prefixIcon: Icon(Icons.search),
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                            ),
+                            onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Logged in since: ${_formatLoginTime(currentUserModel?.lastLoginAt)}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        height: 44,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => RegisterStaffScreen(
+                                  franchiseId: widget.franchiseId,
+                                  franchiseName: _franchise?.name,
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange[600],
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Text('+', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                              SizedBox(width: 8),
+                              Text('REGISTER STAFF', style: TextStyle(letterSpacing: 0.5)),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
-                // Notifications icon
-                Stack(
-                  alignment: Alignment.topRight,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.notifications_none),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Notifications coming soon')),
-                        );
-                      },
-                    ),
-                    // Optional badge (static for now)
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                        child: const Text(' ', style: TextStyle(color: Colors.white, fontSize: 10)),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top Filters & Register Staff
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12.0),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        // Search (light grey, borderless)
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: TextField(
-                              decoration: const InputDecoration(
-                                hintText: 'Search',
-                                prefixIcon: Icon(Icons.search),
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                              ),
-                              onChanged: (v) => setState(() => _searchQuery = v.trim()),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          height: 44,
-                          child: ElevatedButton(
-                            onPressed: _showRegisterStaffDialog,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange[600],
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Text('+', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                                SizedBox(width: 8),
-                                Text('REGISTER STAFF', style: TextStyle(letterSpacing: 0.5)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        // Outlet (single franchise name shown)
-                        _buildFilterDropdown<String>(
-                          label: 'Outlet',
-                          value: _franchise?.name ?? 'All Outlet',
-                          items: [
-                            _franchise?.name ?? 'All Outlet',
-                          ],
-                          onChanged: (_) {}, // Only display
-                          labelStyle: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: 16, fontWeight: FontWeight.w600),
-                          backgroundColor: (_franchise?.name ?? 'All Outlet') == 'All Outlet' ? Colors.orange[50] : Colors.orange[600],
-                          textStyle: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
-                          dropdownColor: Colors.orange[600],
-                          selectedColor: Colors.orange[600],
-                          unselectedColor: Colors.orange[50],
-                          darkClosedBackground: (_franchise?.name ?? 'All Outlet') != 'All Outlet',
-                          // Show count beside current value
-                          getCountLabel: (val) => ' (${_staffMembers.length})',
-                        ),
-                        const SizedBox(width: 12),
-                        // Roles
-                        _buildFilterDropdown<String>(
-                          label: 'Roles',
-                          value: _selectedRole,
-                          items: const ['Staff', 'Supervisor'],
-                          onChanged: (val) => setState(() => _selectedRole = val ?? 'Staff'),
-                          labelStyle: Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: 16, fontWeight: FontWeight.w600),
-                          backgroundColor: Colors.orange[600],
-                          textStyle: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
-                          dropdownColor: Colors.orange[600],
-                          selectedColor: Colors.orange[600],
-                          unselectedColor: Colors.orange[50],
-                          darkClosedBackground: true,
-                          getCountLabel: (val) => ' (${_countForRole(val ?? 'Staff')})',
-                        ),
-                        const SizedBox(width: 12),
-                        // Status (custom full-width menu)
-                        _buildStatusFilter(),
-                        const SizedBox(width: 12),
-                        SizedBox(
+                  const SizedBox(height: 12),
+                  // Filters + actions row
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Outlet (custom menu)
+                      _buildOutletFilter(),
+                      const SizedBox(width: 8),
+                      // Roles (custom menu)
+                      _buildRolesFilter(),
+                      const SizedBox(width: 8),
+                      // Status (custom menu)
+                      _buildStatusFilter(),
+                      const SizedBox(width: 8),
+                      // apply button
+                      Padding(
+                        padding: const EdgeInsets.only(top: 22),
+                        child: SizedBox(
+                          width: 140,
                           height: 40,
                           child: OutlinedButton.icon(
-                            onPressed: () => setState(() => _currentPage = 1),
-                            icon: Icon(Icons.filter_alt, color: Colors.orange[600]),
-                            label: const Text('APPLY FILTER'),
+                            onPressed: _isApplying ? null : _applyFilters,
+                            icon: Icon(Icons.filter_alt, color: Colors.orange[600], size: 20),
+                            label: const Text('APPLY'),
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(color: Colors.orange[600]!),
                               foregroundColor: Colors.orange[600],
                               backgroundColor: Colors.white,
-                              textStyle: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                              textStyle: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.5, fontFamily: 'Arial'),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                           ),
                         ),
-                        const Spacer(),
-                        // Simple pagination control
-                        Row(
-                          children: [
-                            _buildPageButton(1),
-                            const SizedBox(width: 6),
-                            _buildPageButton(2),
-                            const SizedBox(width: 6),
-                            _buildPageButton(3),
-                            const SizedBox(width: 6),
-                            _buildPageButton(4),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Franchise Info Card
-              if (_franchise != null) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20.0),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 1,
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.business, color: Colors.green[600], size: 32),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _franchise!.name,
-                                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.grey[800],
-                                  ),
-                                ),
-                                Text(
-                                  _franchise!.address,
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
+                      const SizedBox(width: 8),
+                      // clear button to reset filter
+                      Padding(
+                        padding: const EdgeInsets.only(top: 22),
+                        child: SizedBox(
+                          width: 140,
+                          height: 40,
+                          child: OutlinedButton.icon(
+                            onPressed: _clearFilters,
+                            icon: Icon(Icons.refresh, color: Colors.orange[600], size: 20),
+                            label: const Text('CLEAR'),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: Colors.orange[600]!),
+                              foregroundColor: Colors.orange[600],
+                              backgroundColor: Colors.white,
+                              textStyle: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.5, fontFamily: 'Arial'),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          _buildInfoChip(
-                            icon: Icons.people,
-                            label: 'Staff Members',
-                            value: '${_staffMembers.length}',
-                            color: Colors.blue,
-                          ),
-                          const SizedBox(width: 12),
-                          _buildInfoChip(
-                            icon: Icons.check_circle,
-                            label: 'Active',
-                            value: '${_staffMembers.where((s) => s.status == UserStatus.active).length}',
-                            color: Colors.green,
-                          ),
-                          const SizedBox(width: 12),
-                          _buildInfoChip(
-                            icon: Icons.pending,
-                            label: 'Pending',
-                            value: '${_staffMembers.where((s) => s.status != UserStatus.active).length}',
-                            color: Colors.orange,
-                          ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 24),
-              ],
-
-              // Add Staff Section
+                  const SizedBox(height: 10),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Franchise Info Card
+            if (_franchise != null) ...[
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(20.0),
@@ -445,205 +321,172 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.person_add, color: Colors.green[600], size: 28),
+                        Icon(Icons.business, color: Colors.green[600], size: 32),
                         const SizedBox(width: 12),
-                        Text(
-                          'Add New Staff Member',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[800],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    FormBuilder(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          Row(
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: FormBuilderTextField(
-                                  name: 'firstName',
-                                  decoration: InputDecoration(
-                                    labelText: 'First Name',
-                                    prefixIcon: const Icon(Icons.person),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.grey[50],
-                                  ),
-                                  validator: FormBuilderValidators.compose([
-                                    FormBuilderValidators.required(),
-                                    FormBuilderValidators.minLength(2),
-                                  ]),
+                              Text(
+                                _franchise!.name,
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800],
                                 ),
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: FormBuilderTextField(
-                                  name: 'lastName',
-                                  decoration: InputDecoration(
-                                    labelText: 'Last Name',
-                                    prefixIcon: const Icon(Icons.person),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    filled: true,
-                                    fillColor: Colors.grey[50],
-                                  ),
-                                  validator: FormBuilderValidators.compose([
-                                    FormBuilderValidators.required(),
-                                    FormBuilderValidators.minLength(2),
-                                  ]),
+                              Text(
+                                _franchise!.address,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey[600],
                                 ),
                               ),
                             ],
                           ),
-                          
-                          const SizedBox(height: 16),
-                          
-                          FormBuilderTextField(
-                            name: 'email',
-                            decoration: InputDecoration(
-                              labelText: 'Email Address',
-                              prefixIcon: const Icon(Icons.email),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey[50],
-                              helperText: 'Staff will receive login credentials via email',
-                            ),
-                            validator: FormBuilderValidators.compose([
-                              FormBuilderValidators.required(),
-                              FormBuilderValidators.email(),
-                            ]),
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          
-                          const SizedBox(height: 24),
-                          
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton.icon(
-                              onPressed: _isAddingStaff ? null : _handleAddStaff,
-                              icon: _isAddingStaff
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    )
-                                  : const Icon(Icons.person_add),
-                              label: Text(_isAddingStaff ? 'Adding Staff...' : 'Add Staff Member'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green[600],
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 24),
-              
-              // Staff List Section
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20.0),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.people, color: Colors.green[600], size: 28),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Staff & Supervisors',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey[800],
-                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
-                    
-                    if (filtered.isEmpty)
-                      Center(
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.people_outline,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No staff members yet',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Add your first staff member using the form above',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: Colors.grey[500],
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
+                    // display total number of staff members, active, and pending
+                    Row(
+                      children: [
+                        _buildInfoChip(
+                          icon: Icons.people,
+                          label: 'Staff Members',
+                          value: '${_staffMembers.length}',
+                          color: Colors.blue,
                         ),
-                      )
-                    else
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: displayed.length,
-                        separatorBuilder: (context, index) => const Divider(),
-                        itemBuilder: (context, index) {
-                          final staff = displayed[index];
-                          return _buildStaffRow(staff);
-                        },
-                      ),
+                        const SizedBox(width: 12),
+                        _buildInfoChip(
+                          icon: Icons.check_circle,
+                          label: 'Active',
+                          value: '${_staffMembers.where((s) => s.status == UserStatus.active).length}',
+                          color: Colors.green,
+                        ),
+                        const SizedBox(width: 12),
+                        _buildInfoChip(
+                          icon: Icons.pending,
+                          label: 'Pending',
+                          value: '${_staffMembers.where((s) => s.status != UserStatus.active).length}',
+                          color: Colors.orange,
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
+              const SizedBox(height: 24),
             ],
-          ),
+            const SizedBox(height: 24),
+            // Staff List Section
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20.0),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    spreadRadius: 1,
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Icon(Icons.people, color: Colors.green[600], size: 28),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Staff & Supervisors',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (totalPages > 1)
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: List.generate(totalPages, (i) {
+                              final page = i + 1;
+                              return Row(
+                                children: [
+                                  if (i != 0) const SizedBox(width: 6),
+                                  _buildPageButton(page),
+                                ],
+                              );
+                            }),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (displayed.isEmpty)
+                    Center(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.people_outline,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No staff members yet',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Add your first staff member using the "Register Staff" button',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey[500],
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTableHeader(),
+                        const SizedBox(height: 8),
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: displayed.length,
+                          separatorBuilder: (context, index) => const Divider(),
+                          itemBuilder: (context, index) {
+                            final staff = displayed[index];
+                            return _buildStaffRow(staff);
+                          },
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
+  // for dashboard number of members, status chips
   Widget _buildInfoChip({
     required IconData icon,
     required String label,
@@ -683,7 +526,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
       ),
     );
   }
-
+  // for staff list tile filter by status
   Widget _buildStaffTile(UserModel staff) {
     Color statusColor;
     String statusText;
@@ -723,13 +566,28 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
       contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
       leading: CircleAvatar(
         backgroundColor: Colors.green[100],
-        child: Text(
-          '${staff.firstName[0]}${staff.lastName[0]}',
-          style: TextStyle(
-            color: Colors.green[700],
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        backgroundImage: (() {
+          final meta = staff.metadata ?? {};
+          final url = meta['photoUrl'];
+          if (url is String && url.isNotEmpty) {
+            return NetworkImage(url);
+          }
+          return null;
+        })(),
+        child: (() {
+          final meta = staff.metadata ?? {};
+          final url = meta['photoUrl'];
+          if (url is String && url.isNotEmpty) {
+            return null;
+          }
+          return Text(
+            '${staff.firstName.isNotEmpty ? staff.firstName[0] : ''}${staff.lastName.isNotEmpty ? staff.lastName[0] : ''}',
+            style: TextStyle(
+              color: Colors.green[700],
+              fontWeight: FontWeight.bold,
+            ),
+          );
+        })(),
       ),
       title: Text(
         staff.fullName,
@@ -805,19 +663,18 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     );
   }
 
-  // New table-style row to match design
+  // for staff list tile filter by status
   Widget _buildStaffRow(UserModel staff) {
     final isSupervisor = (staff.metadata?['isSupervisor'] == true);
     final roleLabel = isSupervisor ? 'Supervisor' : 'Staff';
     final years = _yearsSince(staff.createdAt);
     final outlet = _franchise?.name ?? 'Outlet';
 
-    // Status pill color and dropdown items
-    final statusItems = const [
-      'Active', 'Pending', 'Suspended', 'Email Verified', 'Phone Verified'
-    ];
-    final statusLabel = _statusLabel(staff.status);
-    final statusColor = _statusColor(staff.status);
+    // Restrict status options to core statuses only
+    final statusItems = const ['Active', 'Pending', 'Suspended'];
+    // Canonicalize display for non-core statuses to 'Pending'
+    final statusLabel = _canonicalStatusLabel(staff.status);
+    final statusColor = _statusColor(_statusFromLabel(statusLabel));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -830,10 +687,25 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
               children: [
                 CircleAvatar(
                   backgroundColor: Colors.green[100],
-                  child: Text(
-                    '${staff.firstName.isNotEmpty ? staff.firstName[0] : ''}${staff.lastName.isNotEmpty ? staff.lastName[0] : ''}',
-                    style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.bold),
-                  ),
+                  backgroundImage: (() {
+                    final meta = staff.metadata ?? {};
+                    final url = meta['photoUrl'];
+                    if (url is String && url.isNotEmpty) {
+                      return NetworkImage(url);
+                    }
+                    return null;
+                  })(),
+                  child: (() {
+                    final meta = staff.metadata ?? {};
+                    final url = meta['photoUrl'];
+                    if (url is String && url.isNotEmpty) {
+                      return null;
+                    }
+                    return Text(
+                      '${staff.firstName.isNotEmpty ? staff.firstName[0] : ''}${staff.lastName.isNotEmpty ? staff.lastName[0] : ''}',
+                      style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.bold),
+                    );
+                  })(),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -864,9 +736,9 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.1),
+                color: Colors.transparent,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: statusColor.withOpacity(0.2)),
+                border: Border.all(color: Colors.grey.withOpacity(0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -888,41 +760,16 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                       ),
                       child: DropdownButton<String>(
                         value: statusLabel,
-                        dropdownColor: Colors.orange[600],
                         elevation: 0,
-                        icon: Icon(
-                          Icons.arrow_drop_down,
-                          color: (Colors.orange[700] ?? Colors.orange[700]),
-                        ),
+                        style: const TextStyle(fontFamily: 'Arial', fontWeight: FontWeight.w600, color: Colors.black87),
+                        icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
                         items: statusItems.map((e) {
-                          final isSelected = e == statusLabel;
                           return DropdownMenuItem<String>(
                             value: e,
-                            child: isSelected
-                                ? Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 0),
-                                    color: Colors.orange[600],
-                                    child: Text(
-                                      e,
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                                    ),
-                                  )
-                                : Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 0),
-                                    color: Colors.orange[50],
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                                      child: Text(
-                                        e,
-                                        style: TextStyle(
-                                          color: (Colors.orange[700] ?? Colors.orange),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                              child: Text(e),
+                            ),
                           );
                         }).toList(),
                         onChanged: (val) {
@@ -937,7 +784,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
               ),
             ),
           ),
-          // Actions
+          // Actions for edit and view button
           Expanded(
             flex: 2,
             child: Row(
@@ -947,8 +794,14 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                   tooltip: 'Edit',
                   icon: const Icon(Icons.edit),
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Edit coming soon')),
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ViewStaffScreen(
+                          staff: staff,
+                          franchiseName: _franchise?.name,
+                          startEditing: true,
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -957,8 +810,13 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                   tooltip: 'View',
                   icon: const Icon(Icons.remove_red_eye),
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('View coming soon')),
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ViewStaffScreen(
+                          staff: staff,
+                          franchiseName: _franchise?.name,
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -967,6 +825,26 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // Table header for Staff & Supervisor list
+  Widget _buildTableHeader() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: const [
+            // Match flex with _buildStaffRow
+            Expanded(flex: 3, child: Text('Staff Name', style: TextStyle(color: Colors.grey))),
+            Expanded(flex: 2, child: Text('Roles', style: TextStyle(color: Colors.grey))),
+            Expanded(flex: 2, child: Text('Outlet', style: TextStyle(color: Colors.grey))),
+            Expanded(flex: 2, child: Text('Status', style: TextStyle(color: Colors.grey))),
+            Expanded(flex: 2, child: Text('Action', style: TextStyle(color: Colors.grey))),
+          ],
+        ),
+        const Divider(),
+      ],
     );
   }
 
@@ -999,6 +877,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     return list.toList();
   }
 
+  // pagination function to list the number of members
   List<UserModel> _paginate(List<UserModel> input) {
     final start = (_currentPage - 1) * _pageSize;
     final end = math.min(start + _pageSize, input.length);
@@ -1006,6 +885,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     return input.sublist(start, end);
   }
 
+  // compute the members years according to the createdAt TimeStamp
   int _yearsSince(DateTime start) {
     final now = DateTime.now();
     int years = now.year - start.year;
@@ -1014,6 +894,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     return years.clamp(0, 50);
   }
 
+  // function for status
   String _statusLabel(UserStatus status) {
     switch (status) {
       case UserStatus.active:
@@ -1029,6 +910,19 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     }
   }
 
+  // Canonical label for display
+  String _canonicalStatusLabel(UserStatus status) {
+    switch (status) {
+      case UserStatus.active:
+        return 'Active';
+      case UserStatus.suspended:
+        return 'Suspended';
+      default:
+        return 'Pending';
+    }
+  }
+
+  // color for each status
   Color _statusColor(UserStatus status) {
     switch (status) {
       case UserStatus.active:
@@ -1044,6 +938,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     }
   }
 
+  // function to convert status label to status enum
   UserStatus _statusFromLabel(String label) {
     switch (label) {
       case 'Active':
@@ -1061,6 +956,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     }
   }
 
+  // function to count the number of members for each role
   int _countForRole(String role) {
     if (role == 'All Roles') return _staffMembers.length;
     return _staffMembers.where((u) {
@@ -1074,12 +970,14 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     }).length;
   }
 
+  // function to count the number of members for each status
   int _countForStatus(String statusLabel) {
     if (statusLabel == 'All Status') return _staffMembers.length;
     final target = _statusFromLabel(statusLabel);
     return _staffMembers.where((u) => u.status == target).length;
   }
 
+  // function to build the filter dropdown
   Widget _buildFilterDropdown<T>({
     required String label,
     required T value,
@@ -1095,6 +993,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     String Function(T?)? getCountLabel,
   }) {
     return Expanded(
+      flex: 2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1138,6 +1037,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                           style: TextStyle(
                             color: darkClosedBackground ? Colors.white : (Colors.orange[700] ?? Colors.orange),
                             fontWeight: FontWeight.w600,
+                            fontFamily: 'Arial',
                           ),
                         ),
                       ),
@@ -1155,7 +1055,11 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                               color: selectedColor ?? Colors.orange[600],
                               child: Text(
                                 '${e}$suffix',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'Arial',
+                                ),
                               ),
                             )
                           : Container(
@@ -1169,6 +1073,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                                   style: TextStyle(
                                     color: (Colors.orange[700] ?? Colors.orange),
                                     fontWeight: FontWeight.w600,
+                                    fontFamily: 'Arial',
                                   ),
                                 ),
                               ),
@@ -1185,6 +1090,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     );
   }
 
+  // function to build the page button for pagination
   Widget _buildPageButton(int page) {
     final isActive = _currentPage == page;
     return InkWell(
@@ -1200,7 +1106,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     );
   }
 
-  // Custom Status filter with edge-to-edge menu items
+  // Custom Status filter drop down list
   Widget _buildStatusFilter() {
     final labelStyle = Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: 16, fontWeight: FontWeight.w600);
     final isDarkClosed = _selectedStatus != 'All Status';
@@ -1216,26 +1122,34 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
           const SizedBox(height: 6),
           GestureDetector(
             onTap: _showStatusMenu,
-            child: Container(
+            child: CompositedTransformTarget(
+              link: _statusLink,
+              child: Container(
               key: _statusFilterKey,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: closedBg,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.orange),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '$_selectedStatus$countLabel',
-                    style: TextStyle(
-                      color: isDarkClosed ? Colors.white : (Colors.orange[700] ?? Colors.orange),
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      '$_selectedStatus$countLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: isDarkClosed ? Colors.white : (Colors.orange[700] ?? Colors.orange),
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Arial',
+                      ),
                     ),
                   ),
-                  Icon(Icons.arrow_drop_down, color: arrowColor),
+                  Icon(Icons.arrow_drop_down, color: arrowColor, size: 20),
                 ],
+              ),
               ),
             ),
           ),
@@ -1244,16 +1158,20 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     );
   }
 
+  // function to show the status filter menu
   void _showStatusMenu() {
     _hideStatusMenu();
 
     final ctx = _statusFilterKey.currentContext;
     if (ctx == null) return;
-    final renderBox = ctx.findRenderObject() as RenderBox;
+    final renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final renderBox = renderObject as RenderBox;
     final size = renderBox.size;
     final offset = renderBox.localToGlobal(Offset.zero);
 
-    final items = const ['All Status', 'Active', 'Pending', 'Suspended', 'Email Verified', 'Phone Verified'];
+    final baseItems = const ['All Status', 'Active', 'Pending', 'Suspended'];
+    final items = [_selectedStatus, ...baseItems.where((e) => e != _selectedStatus)];
 
     _statusMenuOverlay = OverlayEntry(
       builder: (context) {
@@ -1261,47 +1179,50 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
           children: [
             // Dismiss area
             Positioned.fill(
-              child: GestureDetector(onTap: _hideStatusMenu),
+              child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hideStatusMenu),
             ),
-            Positioned(
-              left: offset.dx,
-              top: offset.dy + size.height + 4,
-              width: size.width,
-              child: Material(
-                elevation: 6,
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: items.map((e) {
-                      final isSelected = e == _selectedStatus;
-                      final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
-                      final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
-                      final count = ' (${_countForStatus(e)})';
-                      return InkWell(
-                        onTap: () {
-                          setState(() => _selectedStatus = e);
-                          _hideStatusMenu();
-                        },
-                        splashColor: Colors.transparent,
-                        highlightColor: Colors.transparent,
-                        hoverColor: Colors.transparent,
-                        child: Container(
-                          color: rowColor,
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                          child: Text(
-                            '$e$count',
-                            style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
+            CompositedTransformFollower(
+              link: _statusLink,
+              showWhenUnlinked: false,
+              offset: Offset(0, size.height + 4),
+              child: SizedBox(
+                width: math.max(size.width, 1),
+                child: Material(
+                  elevation: 6,
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: items.map((e) {
+                        final isSelected = e == _selectedStatus;
+                        final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
+                        final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
+                        final count = ' (${_countForStatus(e)})';
+                        return InkWell(
+                          onTap: () {
+                            setState(() => _selectedStatus = e);
+                            _hideStatusMenu();
+                          },
+                          splashColor: Colors.transparent,
+                          highlightColor: Colors.transparent,
+                          hoverColor: Colors.transparent,
+                          child: Container(
+                            color: rowColor,
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                            child: Text(
+                              '$e$count',
+                              style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Arial'),
+                            ),
                           ),
-                        ),
-                      );
-                    }).toList(),
+                        );
+                      }).toList(),
+                    ),
                   ),
                 ),
               ),
@@ -1317,6 +1238,291 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
   void _hideStatusMenu() {
     _statusMenuOverlay?.remove();
     _statusMenuOverlay = null;
+  }
+
+  // Custom Outlet filter drop down list
+  Widget _buildOutletFilter() {
+    final labelStyle = Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: 16, fontWeight: FontWeight.w600);
+    final outletLabel = _franchise?.name ?? 'All Outlet';
+    final isDarkClosed = outletLabel != 'All Outlet';
+    final closedBg = outletLabel == 'All Outlet' ? Colors.orange[50] : Colors.orange[600];
+    final arrowColor = Colors.orange[700] ?? Colors.orange;
+    final countLabel = ' (${_staffMembers.length})';
+
+    return Expanded(
+      flex: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Outlet', style: labelStyle ?? const TextStyle(fontSize: 12, color: Colors.orange)),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: _showOutletMenu,
+            child: CompositedTransformTarget(
+              link: _outletLink,
+              child: Container(
+              key: _outletFilterKey,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: closedBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$outletLabel$countLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: isDarkClosed ? Colors.white : (Colors.orange[700] ?? Colors.orange),
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Arial',
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.arrow_drop_down, color: arrowColor, size: 20),
+                ],
+              ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showOutletMenu() {
+    _hideOutletMenu();
+
+    final ctx = _outletFilterKey.currentContext;
+    if (ctx == null) return;
+    final renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final renderBox = renderObject as RenderBox;
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+
+    final items = <String>[_franchise?.name ?? 'All Outlet'];
+
+    _outletMenuOverlay = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hideOutletMenu)),
+            CompositedTransformFollower(
+              link: _outletLink,
+              showWhenUnlinked: false,
+              offset: Offset(0, size.height + 4),
+              child: SizedBox(
+                width: math.max(size.width, 1),
+                child: Material(
+                  elevation: 6,
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items.map((e) {
+                      final isSelected = true; // Outlet is display-only
+                      final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
+                      final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
+                      final count = ' (${_staffMembers.length})';
+                      return InkWell(
+                        onTap: _hideOutletMenu,
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
+                        child: Container(
+                          color: rowColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          child: Text(
+                            '$e$count',
+                            style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Arial'),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    Overlay.of(context).insert(_outletMenuOverlay!);
+  }
+
+  void _hideOutletMenu() {
+    _outletMenuOverlay?.remove();
+    _outletMenuOverlay = null;
+  }
+
+  // Custom Roles filter drop down list
+  Widget _buildRolesFilter() {
+    final labelStyle = Theme.of(context).textTheme.headlineSmall?.copyWith(fontSize: 16, fontWeight: FontWeight.w600);
+    final isDarkClosed = _selectedRole != 'All Roles';
+    final closedBg = _selectedRole == 'All Roles' ? Colors.orange[50] : Colors.orange[600];
+    final arrowColor = Colors.orange[700] ?? Colors.orange;
+    final countLabel = ' (${_countForRole(_selectedRole)})';
+
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Roles', style: labelStyle ?? const TextStyle(fontSize: 12, color: Colors.orange)),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: _showRolesMenu,
+            child: CompositedTransformTarget(
+              link: _rolesLink,
+              child: Container(
+              key: _rolesFilterKey,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: closedBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$_selectedRole$countLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: isDarkClosed ? Colors.white : (Colors.orange[700] ?? Colors.orange),
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Arial',
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.arrow_drop_down, color: arrowColor, size: 20),
+                ],
+              ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRolesMenu() {
+    _hideRolesMenu();
+
+    final ctx = _rolesFilterKey.currentContext;
+    if (ctx == null) return;
+    final renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final renderBox = renderObject as RenderBox;
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+
+    final baseItems = const ['All Roles', 'Staff', 'Supervisor'];
+    final items = [_selectedRole, ...baseItems.where((e) => e != _selectedRole)];
+
+    _rolesMenuOverlay = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hideRolesMenu)),
+            CompositedTransformFollower(
+              link: _rolesLink,
+              showWhenUnlinked: false,
+              offset: Offset(0, size.height + 4),
+              child: SizedBox(
+                width: math.max(size.width, 1),
+                child: Material(
+                  elevation: 6,
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items.map((e) {
+                      final isSelected = e == _selectedRole;
+                      final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
+                      final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
+                      final count = ' (${_countForRole(e)})';
+                      return InkWell(
+                        onTap: () {
+                          setState(() => _selectedRole = e);
+                          _hideRolesMenu();
+                        },
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
+                        child: Container(
+                          color: rowColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          child: Text(
+                            '$e$count',
+                            style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Arial'),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    Overlay.of(context).insert(_rolesMenuOverlay!);
+  }
+
+  void _hideRolesMenu() {
+    _rolesMenuOverlay?.remove();
+    _rolesMenuOverlay = null;
+  }
+
+  // Apply filters: close open menus, unfocus inputs, and reset to page 1
+  void _applyFilters() {
+    if (_isApplying) return;
+    // mark applying to debounce and avoid stutter
+    setState(() {
+      _isApplying = true;
+    });
+    // Close overlays to avoid intercepting taps
+    _hideStatusMenu();
+    _hideRolesMenu();
+    _hideOutletMenu();
+    // Unfocus any active text fields 
+    FocusScope.of(context).unfocus();
+    // Trigger rebuild and ensure pagination starts from first page
+    setState(() {
+      _currentPage = 1;
+    });
+    // Release the button shortly after UI settles
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      setState(() {
+        _isApplying = false;
+      });
+    });
+  }
+
+  // Clear filters: reset Roles and Status selections and pagination
+  void _clearFilters() {
+    setState(() {
+      _selectedRole = 'All Roles';
+      _selectedStatus = 'All Status';
+      _currentPage = 1;
+    });
+    // Close any open overlays
+    _hideStatusMenu();
+    _hideRolesMenu();
+    _hideOutletMenu();
   }
 
   // Register Staff dialog
@@ -1416,7 +1622,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     );
   }
 
-  // Bottom navigation
+  // Bottom navigation for tablet screen size
   Widget _buildBottomNav() {
     return BottomAppBar(
       color: Colors.orange[50],
@@ -1440,6 +1646,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     );
   }
 
+  // Navigation item for bottom navigation bar
   Widget _navItem(IconData icon, String label, {bool active = false, required VoidCallback onTap}) {
     final color = active ? Colors.orange[700] : Colors.black87;
     return InkWell(
@@ -1449,9 +1656,52 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color),
+            Icon(icon, color: color, size: 20),
             const SizedBox(height: 4),
             Text(label, style: TextStyle(color: color, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Side navigation for wide screens
+  Widget _buildSideNav() {
+    return Container(
+      width: 180,
+      color: Colors.orange[50],
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          _sideNavItem(Icons.menu, 'Menu', onTap: () {/* future route */}),
+          _sideNavItem(Icons.list_alt, 'Order List', onTap: () {/* future route */}),
+          _sideNavItem(Icons.people, 'Staff', active: true, onTap: () {}),
+          _sideNavItem(Icons.local_offer, 'Product', onTap: () {/* future route */}),
+          _sideNavItem(Icons.kitchen, 'Ingredient', onTap: () {/* future route */}),
+          _sideNavItem(Icons.inventory_2, 'Inventory', onTap: () {/* future route */}),
+          _sideNavItem(Icons.health_and_safety, 'Hygiene', onTap: () {/* future route */}),
+          _sideNavItem(Icons.bar_chart, 'Report', onTap: () {/* future route */}),
+        ],
+      ),
+    );
+  }
+
+  // Side navigation item for side navigation bar
+  Widget _sideNavItem(IconData icon, String label, {bool active = false, required VoidCallback onTap}) {
+    final color = active ? (Colors.orange[700] ?? Colors.orange) : Colors.black87;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: active ? (Colors.orange[700] ?? Colors.orange) : Colors.transparent, width: 3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600))),
           ],
         ),
       ),
@@ -1467,6 +1717,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     return (i1 + i2).toUpperCase();
   }
 
+  // Helper method to format login time
   String _formatLoginTime(DateTime? dt) {
     if (dt == null) return '-';
     // Format as DD/MM/YYYY hh:mm am/pm
@@ -1481,6 +1732,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     return '$day/$month/$year $hour:$minute $ampm';
   }
 
+  // Helper method to handle adding staff member
   Future<void> _handleAddStaff() async {
     if (!_formKey.currentState!.saveAndValidate()) {
       return;
@@ -1542,6 +1794,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     }
   }
 
+  // Helper method to handle staff actions
   void _handleStaffAction(String action, UserModel staff) {
     switch (action) {
       case 'resend_email':
@@ -1558,6 +1811,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
     }
   }
 
+  // Helper method to update staff status
   Future<void> _updateStaffStatus(UserModel staff, UserStatus status, {required String successText}) async {
     try {
       await FirebaseFirestore.instance.collection('users').doc(staff.id).update({

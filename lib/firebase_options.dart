@@ -4,16 +4,6 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
-/// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// Example:
-/// ```dart
-/// import 'firebase_options.dart';
-/// // ...
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -46,7 +36,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '180998745651',
     projectId: 'ingredient-usage',
     authDomain: 'ingredient-usage.firebaseapp.com',
-    storageBucket: 'ingredient-usage.firebasestorage.app',
+    storageBucket: 'ingredient-usage.appspot.com',
     measurementId: 'G-0N7Z9XQLRS',
   );
 
@@ -55,7 +45,7 @@ class DefaultFirebaseOptions {
     appId: '1:180998745651:android:26c4e4f4b1e976ec7bfd46',
     messagingSenderId: '180998745651',
     projectId: 'ingredient-usage',
-    storageBucket: 'ingredient-usage.firebasestorage.app',
+    storageBucket: 'ingredient-usage.appspot.com',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
@@ -63,7 +53,7 @@ class DefaultFirebaseOptions {
     appId: '1:180998745651:ios:cd7b72ea2ee5f12a7bfd46',
     messagingSenderId: '180998745651',
     projectId: 'ingredient-usage',
-    storageBucket: 'ingredient-usage.firebasestorage.app',
+    storageBucket: 'ingredient-usage.appspot.com',
     iosBundleId: 'com.example.ingredientUsageMonitoringSystem',
   );
 
@@ -72,7 +62,7 @@ class DefaultFirebaseOptions {
     appId: '1:180998745651:ios:cd7b72ea2ee5f12a7bfd46',
     messagingSenderId: '180998745651',
     projectId: 'ingredient-usage',
-    storageBucket: 'ingredient-usage.firebasestorage.app',
+    storageBucket: 'ingredient-usage.appspot.com',
     iosBundleId: 'com.example.ingredientUsageMonitoringSystem',
   );
 
@@ -82,7 +72,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '180998745651',
     projectId: 'ingredient-usage',
     authDomain: 'ingredient-usage.firebaseapp.com',
-    storageBucket: 'ingredient-usage.firebasestorage.app',
+    storageBucket: 'ingredient-usage.appspot.com',
     measurementId: 'G-RG5558R3T4',
   );
 

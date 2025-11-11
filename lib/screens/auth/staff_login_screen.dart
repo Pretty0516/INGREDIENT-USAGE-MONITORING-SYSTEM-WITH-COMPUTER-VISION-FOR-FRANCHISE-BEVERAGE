@@ -37,6 +37,12 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   }
 
   @override
+  void dispose() {
+    // Add explicit dispose hook to align with app-wide lifecycle hygiene.
+    super.dispose();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     precacheImage(const AssetImage('assets/images/background_image.png'), context);

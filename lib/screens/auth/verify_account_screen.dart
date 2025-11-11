@@ -111,6 +111,12 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
   }
 
   @override
+  void dispose() {
+    // Explicit dispose for lifecycle hygiene across pages.
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);

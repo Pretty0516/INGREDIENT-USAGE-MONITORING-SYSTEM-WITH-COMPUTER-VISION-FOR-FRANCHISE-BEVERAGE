@@ -21,6 +21,12 @@ class _FranchiseOwnerRegistrationScreenState extends State<FranchiseOwnerRegistr
   bool _obscureConfirmPassword = true;
 
   @override
+  void dispose() {
+    // Explicit dispose for lifecycle hygiene across pages.
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],

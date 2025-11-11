@@ -113,7 +113,11 @@ class UserModel {
           ? (map['lastLoginAt'] as Timestamp).toDate() 
           : null,
       isTemporaryPassword: map['isTemporaryPassword'] ?? false,
-      metadata: map['metadata'],
+      // Merge top-level salary fields into metadata for consistent access
+      metadata: {
+        ...(map['metadata'] ?? {}),
+        if (map['salary'] != null) 'salary': map['salary'],
+      },
     );
   }
 
