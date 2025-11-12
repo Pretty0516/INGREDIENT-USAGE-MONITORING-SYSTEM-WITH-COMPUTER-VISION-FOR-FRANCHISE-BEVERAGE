@@ -297,26 +297,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Checkbox(
-                  value: _skipSetup,
-                  onChanged: (v) {
-                    setState(() => _skipSetup = v ?? false);
-                  },
-                  activeColor: const Color(0xFFDC711F),
-                  side: const BorderSide(color: Color(0xFFDC711F)),
-                ),
-                const Text(
-                  'Skip verification (dev)',
-                  style: TextStyle(fontSize: 16),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -345,25 +325,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _seedSupervisor,
-              icon: const Icon(Icons.add_circle_outline),
-              label: const Text(
-                'Add Supervisor (Seed)',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC711F),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );

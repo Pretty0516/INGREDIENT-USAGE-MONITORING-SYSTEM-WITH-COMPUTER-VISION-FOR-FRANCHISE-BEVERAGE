@@ -15,6 +15,19 @@ class AuthService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const Uuid _uuid = Uuid();
 
+  // Normalize franchise id values: accept raw id, document path string, or DocumentReference
+  static String _normalizeFranchiseId(dynamic value) {
+    if (value == null) return '';
+    if (value is String) {
+      final match = RegExp(r"/franchises/([^/]+)$").firstMatch(value);
+      return match != null ? (match.group(1) ?? value) : value;
+    }
+    if (value is DocumentReference) {
+      return value.id;
+    }
+    return value.toString();
+  }
+
   // Collections
   static const String _usersCollection = 'users';
   static const String _franchisesCollection = 'franchises';
@@ -104,13 +117,82 @@ class AuthService {
   }) async {
     try {
       // Verify franchise owner permissions
-      final ownerDoc = await _firestore.collection(_usersCollection).doc(franchiseOwnerId).get();
-      if (!ownerDoc.exists) {
+      final ownerDocById = await _firestore.collection(_usersCollection).doc(franchiseOwnerId).get();
+      Map<String, dynamic>? ownerRaw;
+
+      if (ownerDocById.exists) {
+        ownerRaw = ownerDocById.data();
+      } else {
+        // Fallback 1: match a document whose 'id' field equals the provided franchiseOwnerId
+        final byIdField = await _firestore
+            .collection(_usersCollection)
+            .where('id', isEqualTo: franchiseOwnerId)
+            .limit(1)
+            .get();
+        if (byIdField.docs.isNotEmpty) {
+          ownerRaw = byIdField.docs.first.data();
+        } else {
+          // Fallback 2: use the currently authenticated email to locate the owner document
+          final email = _auth.currentUser?.email;
+          if (email != null) {
+            final byEmail = await _firestore
+                .collection(_usersCollection)
+                .where('email', isEqualTo: email)
+                .limit(1)
+                .get();
+            if (byEmail.docs.isNotEmpty) {
+              ownerRaw = byEmail.docs.first.data();
+            }
+          }
+        }
+      }
+
+      if (ownerRaw == null) {
         return AuthResponse.error(message: 'Unauthorized: Invalid franchise owner');
       }
 
-      final ownerData = UserModel.fromMap(ownerDoc.data()!);
-      if (ownerData.role != UserRole.franchiseOwner || ownerData.franchiseId != franchiseId) {
+      final ownerData = UserModel.fromMap(ownerRaw);
+      if (ownerData.role != UserRole.franchiseOwner) {
+        return AuthResponse.error(message: 'Unauthorized: Invalid permissions');
+      }
+
+      // Allow franchise owners with multiple franchises; validate membership against all known schema variants
+      final Map<String, dynamic> raw = ownerRaw;
+      final Set<String> allowedFranchiseIds = {
+        if (ownerData.franchiseId != null && ownerData.franchiseId!.isNotEmpty)
+          ownerData.franchiseId!,
+      };
+      final fi = raw['franchiseID'];
+      if (fi is Map<String, dynamic>) {
+        final idField = _normalizeFranchiseId(fi['id']);
+        if (idField.isNotEmpty) {
+          allowedFranchiseIds.add(idField);
+        }
+        final ids = fi['ids'];
+        if (ids is List) {
+          for (final v in ids) {
+            final norm = _normalizeFranchiseId(v);
+            if (norm.isNotEmpty) allowedFranchiseIds.add(norm);
+          }
+        }
+        final single = fi['franchise'];
+        final singleNorm = _normalizeFranchiseId(single);
+        if (singleNorm.isNotEmpty) allowedFranchiseIds.add(singleNorm);
+        final refs = fi['franchises'];
+        if (refs is List) {
+          for (final r in refs) {
+            final norm = _normalizeFranchiseId(r);
+            if (norm.isNotEmpty) allowedFranchiseIds.add(norm);
+          }
+        } else {
+          // Some schemas store a single path string under 'franchises'
+          final norm = _normalizeFranchiseId(refs);
+          if (norm.isNotEmpty) allowedFranchiseIds.add(norm);
+        }
+      }
+
+      final requestedId = _normalizeFranchiseId(franchiseId);
+      if (!allowedFranchiseIds.contains(requestedId)) {
         return AuthResponse.error(message: 'Unauthorized: Invalid permissions');
       }
 
@@ -143,8 +225,14 @@ class AuthService {
         metadata: {'hashedTempPassword': hashedPassword},
       );
 
-      // Save staff user
-      await _firestore.collection(_usersCollection).doc(staffId).set(staffUser.toMap());
+      // Save staff user and include map-based franchiseID for schema compatibility
+      final franchiseRef = _firestore.collection(_franchisesCollection).doc(franchiseId);
+      final staffMap = staffUser.toMap();
+      staffMap['franchiseID'] = {
+        'franchise': franchiseRef,
+        'id': franchiseId,
+      };
+      await _firestore.collection(_usersCollection).doc(staffId).set(staffMap);
 
       // Update franchise staff list
       await _firestore.collection(_franchisesCollection).doc(franchiseId).update({

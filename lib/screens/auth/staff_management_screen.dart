@@ -790,9 +790,11 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                IconButton(
-                  tooltip: 'Edit',
-                  icon: const Icon(Icons.edit),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.orange),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -804,11 +806,14 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                       ),
                     );
                   },
+                  child: const Icon(Icons.edit, color: Colors.orange, size: 18),
                 ),
-                const SizedBox(width: 6),
-                IconButton(
-                  tooltip: 'View',
-                  icon: const Icon(Icons.remove_red_eye),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.orange),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -819,6 +824,7 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
                       ),
                     );
                   },
+                  child: const Icon(Icons.visibility, color: Colors.orange, size: 18),
                 ),
               ],
             ),

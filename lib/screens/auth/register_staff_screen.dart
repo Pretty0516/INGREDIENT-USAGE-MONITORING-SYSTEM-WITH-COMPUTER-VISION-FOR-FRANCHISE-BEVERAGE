@@ -6,11 +6,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
-// ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
+import 'dart:math' as math;
 
 import '../../services/auth_service.dart';
 import '../../widgets/app_shell.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../models/user_model.dart';
 
 class RegisterStaffScreen extends StatefulWidget {
   final String franchiseId;
@@ -27,6 +30,8 @@ class RegisterStaffScreen extends StatefulWidget {
 }
 
 class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
+  // Always in editing mode to mirror edit page
+  bool _isEditing = true;
   // Editing controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -39,9 +44,28 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
   String? _phoneError;
   String? _salaryError;
 
-  // Dropdown labels
-  String _roleLabel = 'Staff';
-  String _statusLabel = 'Pending';
+  // Live checklist state like edit page
+  bool _checkEmailHasAt = false;
+  bool _checkEmailNoSpaces = true;
+  bool _checkEmailHasDotCom = false;
+  bool _checkStartsWith01 = false;
+  bool _checkDigits = false;
+  bool _checkLength = false; // 10 or 11 digits
+  bool _checkNoHyphen = true;
+
+  // Edit dropdown state for Role/Status/Outlet (mirror edit page)
+  String _editRoleLabel = 'Staff';
+  String _editStatusLabel = 'Pending';
+  String _editOutletLabel = 'N/A';
+  final GlobalKey _roleEditKey = GlobalKey();
+  final GlobalKey _statusEditKey = GlobalKey();
+  final GlobalKey _outletEditKey = GlobalKey();
+  final LayerLink _roleEditLink = LayerLink();
+  final LayerLink _statusEditLink = LayerLink();
+  final LayerLink _outletEditLink = LayerLink();
+  OverlayEntry? _roleEditOverlay;
+  OverlayEntry? _statusEditOverlay;
+  OverlayEntry? _outletEditOverlay;
 
   // Photo upload state
   Uint8List? _pendingPhotoBytes;
@@ -62,6 +86,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width >= 768;
+    _editOutletLabel = widget.franchiseName ?? 'N/A';
     return AppShell(
       activeItem: 'Staff',
       body: SingleChildScrollView(
@@ -74,11 +99,11 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
               children: [
                 const SizedBox(height: 8),
                 const Text(
-                  'Register Staff',
+                  'Staff Profile',
                   style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
-                // Back button styled like cancel
+                // Back button below the Staff Profile title, top-left aligned
                 OutlinedButton.icon(
                   onPressed: () => Navigator.of(context).maybePop(),
                   icon: const Icon(
@@ -101,29 +126,50 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(28),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
                       BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 1,
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                        color: Color(0x1A000000),
+                        blurRadius: 12,
+                        offset: Offset(0, 6),
                       ),
                     ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Photo + Reupload
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                      children: [
+                            ElevatedButton(
+                              onPressed: _isSubmitting ? null : _saveEdits,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: const Text(
+                                'REGISTER',
+                                style: TextStyle(letterSpacing: 0.5, fontSize: 18),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Stack(
+                          Column(
                             children: [
                               CircleAvatar(
                                 radius: wide ? 60 : 48,
@@ -134,63 +180,33 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
                                   return const AssetImage('assets/images/person1.jpeg');
                                 })() as ImageProvider,
                               ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _isUploadingPhoto ? null : _reuploadPhoto,
+                                child: const Text(
+                                  'REUPLOAD PHOTO',
+                                  style: TextStyle(
+                                    color: Color(0xFFDC711F),
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
                               if (_isUploadingPhoto)
-                                Positioned.fill(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.25),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Center(
-                                      child: SizedBox(
-                                        width: 28,
-                                        height: 28,
-                                        child: CircularProgressIndicator(strokeWidth: 3),
-                                      ),
-                                    ),
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 4),
+                                  child: SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
                                   ),
                                 ),
                             ],
                           ),
-                          const SizedBox(width: 16),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              OutlinedButton(
-                                onPressed: _isUploadingPhoto ? null : _reuploadPhoto,
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.orange),
-                                  foregroundColor: Colors.orange,
-                                ),
-                                child: const Text('REUPLOAD PHOTO'),
-                              ),
-                            ],
+                          const SizedBox(width: 28),
+                          Expanded(
+                            child: _detailsTable(),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Form fields similar to edit
-                      _buildTable(wide),
-                      const SizedBox(height: 16),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: ElevatedButton(
-                          onPressed: _isSubmitting ? null : _submit,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange[600],
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Icon(Icons.person_add),
-                              SizedBox(width: 8),
-                              Text('REGISTER STAFF'),
-                            ],
-                          ),
-                        ),
                       ),
                     ],
                   ),
@@ -203,7 +219,8 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     );
   }
 
-  Widget _buildTable(bool wide) {
+  Widget _detailsTable() {
+    final outlet = widget.franchiseName ?? 'N/A';
     return Table(
       columnWidths: const {
         0: FlexColumnWidth(2),
@@ -215,48 +232,160 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
       children: [
         TableRow(
           children: [
-            _tableLabel('Name'),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-              child: _textField(controller: _nameController, errorText: _nameError),
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12), child: _tableLabel('Name')),
             ),
-            _tableLabel('Contact Number'),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-              child: _textField(
-                controller: _phoneController,
-                errorText: _phoneError,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                child: _textField(controller: _nameController, errorText: _nameError),
+              ),
+            ),
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12), child: _tableLabel('Outlet')),
+            ),
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _editDropdown(
+                        key: _outletEditKey,
+                        link: _outletEditLink,
+                        label: _editOutletLabel,
+                        items: <String>[outlet],
+                        onTap: _showOutletEditMenu,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: Icon(Icons.arrow_drop_down, color: Colors.orange),
+                      onPressed: _showOutletEditMenu,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
         TableRow(
           children: [
-            _tableLabel('Email'),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-              child: _textField(
-                controller: _emailController,
-                errorText: _emailError,
-                keyboardType: TextInputType.emailAddress,
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12), child: _tableLabel('Contact')),
+            ),
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _textField(
+                      controller: _phoneController,
+                      errorText: _phoneError,
+                      keyboardType: TextInputType.phone,
+                      onChanged: _onPhoneChanged,
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _CriteriaRow(label: 'starts with 01', checked: _checkStartsWith01),
+                          _CriteriaRow(label: 'digits', checked: _checkDigits),
+                          _CriteriaRow(label: '10 or 11 digits in total', checked: _checkLength),
+                          _CriteriaRow(label: 'without "-"', checked: _checkNoHyphen),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            _tableLabel('Roles'),
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12), child: _tableLabel('Email')),
+            ),
+            TableCell(
+              verticalAlignment: TableCellVerticalAlignment.top,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _textField(
+                      controller: _emailController,
+                      errorText: _emailError,
+                      keyboardType: TextInputType.emailAddress,
+                      onChanged: _onEmailChanged,
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _CriteriaRow(label: "contains '@'", checked: _checkEmailHasAt),
+                          _CriteriaRow(label: 'no spaces', checked: _checkEmailNoSpaces),
+                          _CriteriaRow(label: 'contains .com', checked: _checkEmailHasDotCom),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        TableRow(
+          children: [
+            Padding(padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12), child: _tableLabel('Roles')),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
               child: Row(
                 children: [
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _roleLabel,
-                      items: const [
-                        DropdownMenuItem(value: 'Staff', child: Text('Staff')),
-                        DropdownMenuItem(value: 'Supervisor', child: Text('Supervisor')),
-                      ],
-                      onChanged: (v) => setState(() => _roleLabel = v ?? 'Staff'),
+                    child: _editDropdown(
+                      key: _roleEditKey,
+                      link: _roleEditLink,
+                      label: _editRoleLabel,
+                      items: const ['Staff', 'Supervisor'],
+                      onTap: _showRoleEditMenu,
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.arrow_drop_down, color: Colors.orange),
+                    onPressed: _showRoleEditMenu,
+                  ),
+                ],
+              ),
+            ),
+            Padding(padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12), child: _tableLabel('Status')),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _editDropdown(
+                      key: _statusEditKey,
+                      link: _statusEditLink,
+                      label: _editStatusLabel,
+                      items: const ['Active', 'Pending', 'Suspended'],
+                      onTap: _showStatusEditMenu,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(Icons.arrow_drop_down, color: Colors.orange),
+                    onPressed: _showStatusEditMenu,
                   ),
                 ],
               ),
@@ -265,35 +394,29 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
         ),
         TableRow(
           children: [
-            _tableLabel('Status'),
+            Padding(padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12), child: _tableLabel('Salary')),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
               child: Row(
                 children: [
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _statusLabel,
-                      items: const [
-                        DropdownMenuItem(value: 'Active', child: Text('Active')),
-                        DropdownMenuItem(value: 'Pending', child: Text('Pending')),
-                        DropdownMenuItem(value: 'Suspended', child: Text('Suspended')),
-                      ],
-                      onChanged: (v) => setState(() => _statusLabel = v ?? 'Pending'),
+                    child: _textField(
+                      controller: _salaryController,
+                      errorText: _salaryError,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Only digits are allowed',
+                    child: Icon(Icons.help_outline, color: Colors.orange[700] ?? Colors.orange),
                   ),
                 ],
               ),
             ),
-            _tableLabel('Salary'),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-              child: _textField(
-                controller: _salaryController,
-                errorText: _salaryError,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              ),
-            ),
+            const SizedBox.shrink(),
+            const SizedBox.shrink(),
           ],
         ),
       ],
@@ -318,18 +441,50 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     String? errorText,
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
+    ValueChanged<String>? onChanged,
   }) {
     return TextField(
       controller: controller,
+      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+      maxLines: 1,
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
+      onChanged: onChanged,
       decoration: InputDecoration(
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        filled: true,
+        fillColor: Colors.white,
         errorText: errorText,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Colors.orange),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: Colors.orange.shade700),
+        ),
       ),
     );
+  }
+
+  void _onEmailChanged(String v) {
+    final input = v.trim();
+    setState(() {
+      _checkEmailHasAt = input.contains('@');
+      _checkEmailNoSpaces = !input.contains(' ');
+      _checkEmailHasDotCom = input.toLowerCase().contains('.com');
+    });
+  }
+
+  void _onPhoneChanged(String v) {
+    final input = v.trim();
+    setState(() {
+      _checkStartsWith01 = input.startsWith('01');
+      _checkDigits = RegExp(r'^\d+$').hasMatch(input);
+      _checkLength = input.length == 10 || input.length == 11;
+      _checkNoHyphen = !input.contains('-');
+    });
   }
 
   Future<void> _reuploadPhoto() async {
@@ -408,7 +563,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     }
   }
 
-  Future<void> _submit() async {
+  Future<void> _saveEdits() async {
     try {
       // Validate
       final name = _nameController.text.trim();
@@ -421,12 +576,12 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
       if (name.isEmpty) _nameError = 'Please enter the name';
       if (email.isEmpty) {
         _emailError = 'Please enter the email';
-      } else if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      } else if (!_isValidEmail(email)) {
         _emailError = 'invalid email address (e.g. example@domain.com)';
       }
       if (phone.isEmpty) {
         _phoneError = 'Please enter the contact number';
-      } else if (!RegExp(r'^01\d{8,9}$').hasMatch(phone)) {
+      } else if (!_isValidPhone(phone)) {
         _phoneError = 'Invalid Contact Number (e.g. 01xxxxxxxx)';
       }
       if (salaryText.isEmpty) {
@@ -439,7 +594,9 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
         setState(() {});
         return;
       }
-
+      // Ask for confirmation before saving (mirror edit page)
+      final confirmed = await _showConfirmSaveDialog();
+      if (!confirmed) return;
       setState(() => _isSubmitting = true);
 
       // Split name
@@ -451,9 +608,16 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
         lastName = name.substring(idx + 1).trim();
       }
 
-      final ownerId = AuthService.currentUser?.uid;
-      if (ownerId == null) {
+      // Use Firebase Auth UID to look up owner document reliably
+      final ownerUid = AuthService.currentUser?.uid;
+      if (ownerUid == null) {
         throw Exception('User not authenticated');
+      }
+      // Optional local guard for role (backend also validates)
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final currentUser = authProvider.currentUser;
+      if (currentUser == null || currentUser.role != UserRole.franchiseOwner) {
+        throw Exception('Only franchise owners can register staff');
       }
 
       // Create staff basic record
@@ -462,7 +626,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
         email: email,
         firstName: firstName,
         lastName: lastName,
-        franchiseOwnerId: ownerId,
+        franchiseOwnerId: ownerUid,
       );
 
       if (!resp.success) {
@@ -475,14 +639,17 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
       }
 
       // Update additional fields
-      final mappedRole = _roleLabel.toLowerCase(); // staff or supervisor
+      final mappedRole = _editRoleLabel.toLowerCase(); // staff or supervisor
       final mappedStatus = {
         'Active': 'active',
         'Pending': 'pending',
         'Suspended': 'suspended',
-      }[_statusLabel] ?? 'pending';
+      }[_editStatusLabel] ?? 'pending';
 
       final updates = <String, dynamic>{
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
         'phoneNumber': phone,
         'salary': num.tryParse(salaryText) ?? salaryText,
         'role': mappedRole,
@@ -494,9 +661,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
       await FirebaseFirestore.instance.collection('users').doc(staffId).update(updates);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Staff registered successfully')), 
-        );
+        await _showSuccessDialog('Staff registered successfully.');
         Navigator.of(context).pop();
       }
     } catch (e) {
@@ -506,5 +671,338 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  bool _isValidEmail(String input) {
+    final emailReg = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    return emailReg.hasMatch(input);
+  }
+
+  bool _isValidPhone(String input) {
+    final normalized = input.replaceAll(RegExp(r'[^0-9]'), '');
+    final phoneReg = RegExp(r'^01\d{8,9}$');
+    return phoneReg.hasMatch(normalized);
+  }
+
+  Future<bool> _showConfirmSaveDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFFF6EDDF),
+        title: const Text(
+          'Confirm',
+          style: TextStyle(color: Colors.black),
+        ),
+        content: const Text(
+          'Do you want to save these changes?',
+          style: TextStyle(color: Colors.black, fontSize: 18),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context, false),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFDC711F),
+              side: const BorderSide(color: Color(0xFFDC711F)),
+              textStyle: const TextStyle(fontSize: 18),
+            ),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC711F),
+              foregroundColor: Colors.white,
+              textStyle: const TextStyle(fontSize: 18),
+            ),
+            child: const Text('SAVE'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Future<void> _showSuccessDialog(String message) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFFF6EDDF),
+        title: const Text(
+          'Success',
+          style: TextStyle(color: Colors.black),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.black, fontSize: 18),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC711F),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _cancelEdit() {
+    Navigator.of(context).maybePop();
+  }
+
+  // Styled edit dropdown copied from edit page
+  Widget _editDropdown({
+    required GlobalKey key,
+    required LayerLink link,
+    required String label,
+    required List<String> items,
+    required VoidCallback onTap,
+  }) {
+    final arrowColor = Colors.orange[700] ?? Colors.orange;
+    return GestureDetector(
+      onTap: onTap,
+      child: CompositedTransformTarget(
+        link: link,
+        child: Container(
+          key: key,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.orange[600],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.orange),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Arial',
+                  ),
+                ),
+              ),
+              Icon(Icons.arrow_drop_down, color: arrowColor),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showRoleEditMenu() {
+    _hideRoleEditMenu();
+    final ctx = _roleEditKey.currentContext;
+    if (ctx == null) return;
+    final renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final box = renderObject as RenderBox;
+    final size = box.size;
+    final baseItems = const ['Staff', 'Supervisor'];
+    final items = [_editRoleLabel, ...baseItems.where((e) => e != _editRoleLabel)];
+    _roleEditOverlay = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hideRoleEditMenu)),
+            CompositedTransformFollower(
+              link: _roleEditLink,
+              showWhenUnlinked: false,
+              offset: Offset(0, size.height + 4),
+              child: SizedBox(
+                width: math.max(size.width, 1),
+                child: Material(
+                  elevation: 6,
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items.map((e) {
+                      final isSelected = e == _editRoleLabel;
+                      final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
+                      final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
+                      return InkWell(
+                        onTap: () {
+                          setState(() => _editRoleLabel = e);
+                          _hideRoleEditMenu();
+                        },
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
+                        child: Container(
+                          color: rowColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          child: Text(e, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Arial')),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context).insert(_roleEditOverlay!);
+  }
+
+  void _hideRoleEditMenu() {
+    _roleEditOverlay?.remove();
+    _roleEditOverlay = null;
+  }
+
+  void _showStatusEditMenu() {
+    _hideStatusEditMenu();
+    final ctx = _statusEditKey.currentContext;
+    if (ctx == null) return;
+    final renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final box = renderObject as RenderBox;
+    final size = box.size;
+    final baseItems = const ['Active', 'Pending', 'Suspended'];
+    final items = [_editStatusLabel, ...baseItems.where((e) => e != _editStatusLabel)];
+    _statusEditOverlay = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hideStatusEditMenu)),
+            CompositedTransformFollower(
+              link: _statusEditLink,
+              showWhenUnlinked: false,
+              offset: Offset(0, size.height + 4),
+              child: SizedBox(
+                width: math.max(size.width, 1),
+                child: Material(
+                  elevation: 6,
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items.map((e) {
+                      final isSelected = e == _editStatusLabel;
+                      final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
+                      final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
+                      return InkWell(
+                        onTap: () {
+                          setState(() => _editStatusLabel = e);
+                          _hideStatusEditMenu();
+                        },
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
+                        child: Container(
+                          color: rowColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          child: Text(e, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Arial')),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context).insert(_statusEditOverlay!);
+  }
+
+  void _hideStatusEditMenu() {
+    _statusEditOverlay?.remove();
+    _statusEditOverlay = null;
+  }
+
+  void _showOutletEditMenu() {
+    _hideOutletEditMenu();
+    final ctx = _outletEditKey.currentContext;
+    if (ctx == null) return;
+    final renderObject = ctx.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final box = renderObject as RenderBox;
+    final size = box.size;
+    final items = <String>[_editOutletLabel];
+    _outletEditOverlay = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(child: GestureDetector(behavior: HitTestBehavior.translucent, onTap: _hideOutletEditMenu)),
+            CompositedTransformFollower(
+              link: _outletEditLink,
+              showWhenUnlinked: false,
+              offset: Offset(0, size.height + 4),
+              child: SizedBox(
+                width: math.max(size.width, 1),
+                child: Material(
+                  elevation: 6,
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: items.map((e) {
+                      final isSelected = true;
+                      final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
+                      final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
+                      return InkWell(
+                        onTap: _hideOutletEditMenu,
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
+                        child: Container(
+                          color: rowColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          child: Text(e, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontFamily: 'Arial')),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context).insert(_outletEditOverlay!);
+  }
+
+  void _hideOutletEditMenu() {
+    _outletEditOverlay?.remove();
+    _outletEditOverlay = null;
+  }
+
+}
+
+class _CriteriaRow extends StatelessWidget {
+  final String label;
+  final bool checked;
+  const _CriteriaRow({required this.label, required this.checked});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(checked ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: 16, color: const Color(0xFFDC711F)),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(color: Color(0xFFDC711F), fontSize: 14),
+        ),
+      ],
+    );
   }
 }

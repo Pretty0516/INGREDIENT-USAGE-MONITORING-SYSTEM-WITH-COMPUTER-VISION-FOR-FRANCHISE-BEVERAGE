@@ -1,6 +1,8 @@
 // for standardization navigation bar and the top bar for user information and notification
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
+import '../routes/app_routes.dart';
 import '../providers/auth_provider.dart';
 
 class AppShell extends StatefulWidget {
@@ -139,9 +141,9 @@ class _AppShellState extends State<AppShell> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             _navItem(Icons.list_alt, 'Order List', onTap: () {}),
-            _navItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: () {}),
-            _navItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: () {}),
-            _navItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: () {}),
+            _navItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
+          _navItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
+          _navItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
             _navItem(Icons.inventory_2, 'Inventory', active: widget.activeItem == 'Inventory', onTap: () {}),
             _navItem(Icons.health_and_safety, 'Hygiene', active: widget.activeItem == 'Hygiene', onTap: () {}),
             _navItem(Icons.bar_chart, 'Report', active: widget.activeItem == 'Report', onTap: () {}),
@@ -179,15 +181,35 @@ class _AppShellState extends State<AppShell> {
         children: [
           const SizedBox(height: 12),
           _sideNavItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: () {}),
-          _sideNavItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: () {}),
-          _sideNavItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: () {}),
-          _sideNavItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: () {}),
+          _sideNavItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
+          _sideNavItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
+          _sideNavItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
           _sideNavItem(Icons.inventory_2, 'Inventory', active: widget.activeItem == 'Inventory', onTap: () {}),
           _sideNavItem(Icons.health_and_safety, 'Hygiene', active: widget.activeItem == 'Hygiene', onTap: () {}),
           _sideNavItem(Icons.bar_chart, 'Report', active: widget.activeItem == 'Report', onTap: () {}),
         ],
       ),
     );
+  }
+  
+  void _goToStaff() {
+    final authProvider = context.read<AuthProvider>();
+    final fid = authProvider.currentUser?.franchiseId;
+    if (fid != null && fid.isNotEmpty) {
+      context.go('${AppRoutes.staffManagement}?franchiseId=$fid');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Franchise information not available')),
+      );
+    }
+  }
+
+  void _goToProduct() {
+    context.go(AppRoutes.productManagement);
+  }
+
+  void _goToIngredient() {
+    context.go(AppRoutes.ingredientManagement);
   }
 
   // side navigation bar item

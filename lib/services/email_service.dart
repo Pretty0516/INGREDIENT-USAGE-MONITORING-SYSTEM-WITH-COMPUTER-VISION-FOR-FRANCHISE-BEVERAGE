@@ -1,11 +1,14 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
+// Web-only import is safe because this project targets web; guarded by kIsWeb
+import 'dart:html' as html;
 
 class EmailService {
-  static const String _senderEmail = 'your-app-email@gmail.com'; // Replace with your email
-  static const String _senderPassword = 'your-app-password'; // Replace with app password
-  static const String _senderName = 'Ingredient Monitoring System';
+  static const String _senderEmail = 'yanningchew@gmail.com'; // Replace with your email
+  static const String _senderPassword = 'aitu leul pfrw sgve'; // Replace with app password
+  static const String _senderName = 'Ingredient Usage Monitoring System';
 
   static SmtpServer get _smtpServer => gmail(_senderEmail, _senderPassword);
 
@@ -24,6 +27,23 @@ class EmailService {
     required String temporaryPassword,
   }) async {
     try {
+      // On Flutter Web, raw SMTP sockets are not available.
+      // Open the user's email client with a prefilled message instead.
+      if (kIsWeb) {
+        final subject = 'Welcome to $franchiseName - Your Account Details';
+        final body = _buildTemporaryPasswordEmailPlaintext(
+          staffName: staffName,
+          franchiseName: franchiseName,
+          temporaryPassword: temporaryPassword,
+          recipientEmail: recipientEmail,
+        );
+        final mailto = 'mailto:$recipientEmail'
+            '?subject=' + Uri.encodeComponent(subject) +
+            '&body=' + Uri.encodeComponent(body);
+        html.window.open(mailto, '_blank');
+        return true; // Considered sent (user completes in their client)
+      }
+
       final message = Message()
         ..from = Address(_senderEmail, _senderName)
         ..recipients.add(recipientEmail)
@@ -254,6 +274,24 @@ class EmailService {
     </body>
     </html>
     ''';
+  }
+
+  // Plaintext fallback for mailto (used on web)
+  static String _buildTemporaryPasswordEmailPlaintext({
+    required String staffName,
+    required String franchiseName,
+    required String temporaryPassword,
+    required String recipientEmail,
+  }) {
+    return 'Hello $staffName,\n\n'
+        'Your account has been created in $franchiseName.\n\n'
+        'Email: $recipientEmail\n'
+        'Temporary Password: $temporaryPassword\n\n'
+        'Next steps:\n'
+        '1) Login with the credentials above.\n'
+        '2) Verify your phone number.\n'
+        '3) Update your password.\n\n'
+        'Please keep this email secure.';
   }
 
   /// Builds the HTML template for phone verification reminder
