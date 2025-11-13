@@ -427,7 +427,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         }
         // Allow staff and supervisors
         if (user.role != UserRole.staff && user.role != UserRole.supervisor) {
-          throw Exception('Invalid login method for this account type');
+          throw Exception('Invalid email or password. Please try again.');
         }
 
         if (_rememberMe) {

@@ -14,6 +14,7 @@ import '../screens/dashboard_screen.dart';
 import '../screens/suspended_screen.dart';
 import '../screens/product_management_screen.dart';
 import '../screens/ingredient_management_screen.dart';
+import '../screens/add_ingredient_screen.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -27,6 +28,7 @@ class AppRoutes {
   static const String suspended = '/suspended';
   static const String productManagement = '/product-management';
   static const String ingredientManagement = '/ingredient-management';
+  static const String addIngredient = '/ingredient-add';
 
   static GoRouter createRouter() {
     return GoRouter(
@@ -186,6 +188,11 @@ class AppRoutes {
           path: ingredientManagement,
           name: 'ingredient-management',
           builder: (context, state) => const IngredientManagementScreen(),
+        ),
+        GoRoute(
+          path: addIngredient,
+          name: 'ingredient-add',
+          builder: (context, state) => const AddIngredientScreen(),
         ),
       ],
       errorBuilder: (context, state) => Scaffold(

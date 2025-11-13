@@ -3,9 +3,11 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 
 import '../widgets/app_shell.dart';
 import '../providers/auth_provider.dart';
+import '../routes/app_routes.dart';
 
 class IngredientItem {
   final String id;
@@ -61,6 +63,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
   bool _seeding = false;
   int _currentPage = 1;
   int _pageSize = 8;
+  List<String> _categories = const ['All Category'];
 
   // Custom dropdown infra for Category filter
   final GlobalKey _categoryFilterKey = GlobalKey();
@@ -71,23 +74,14 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
   void initState() {
     super.initState();
     _loadIngredients();
+    _loadCategories();
   }
 
   Future<void> _seedDemoIngredients() async {
     if (_seeding) return;
     setState(() => _seeding = true);
     try {
-      final authProvider = context.read<AuthProvider>();
-      final fid = authProvider.currentUser?.franchiseId;
-      CollectionReference<Map<String, dynamic>> col;
-      if (fid != null && fid.isNotEmpty) {
-        col = FirebaseFirestore.instance
-            .collection('franchises')
-            .doc(fid)
-            .collection('ingredients');
-      } else {
-        col = FirebaseFirestore.instance.collection('ingredients');
-      }
+      final col = FirebaseFirestore.instance.collection('ingredients');
 
       final demo = [
         {
@@ -154,20 +148,9 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
   Future<void> _loadIngredients() async {
     setState(() => _loading = true);
     try {
-      final authProvider = context.read<AuthProvider>();
-      final fid = authProvider.currentUser?.franchiseId;
-      Query<Map<String, dynamic>> query;
-      if (fid != null && fid.isNotEmpty) {
-        query = FirebaseFirestore.instance
-            .collection('franchises')
-            .doc(fid)
-            .collection('ingredients')
-            .orderBy('name');
-      } else {
-        query = FirebaseFirestore.instance
-            .collection('ingredients')
-            .orderBy('name');
-      }
+      final query = FirebaseFirestore.instance
+          .collection('ingredients')
+          .orderBy('name');
 
       final snap = await query.get();
       final items = snap.docs.map((d) => IngredientItem.fromMap(d.id, d.data())).toList();
@@ -194,13 +177,23 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     }
   }
 
-  List<String> get _categories {
-    final set = <String>{};
-    for (final i in _ingredients) {
-      set.add(i.category);
-    }
-    final list = set.toList()..sort();
-    return ['All Category', ...list];
+  Future<void> _loadCategories() async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('category').get();
+      final set = <String>{};
+      for (final d in snap.docs) {
+        final m = d.data();
+        final c = (m['name'] ?? m['category'] ?? '').toString().trim();
+        if (c.isNotEmpty) set.add(c);
+      }
+      final list = ['All Category', ...set.toList()..sort()];
+      setState(() {
+        _categories = list;
+        if (!_categories.contains(_selectedCategory)) {
+          _selectedCategory = 'All Category';
+        }
+      });
+    } catch (_) {}
   }
 
   List<IngredientItem> _filtered() {
@@ -514,9 +507,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
   }
 
   void _onAddIngredient() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Add Ingredient flow coming soon')),
-    );
+    context.go(AppRoutes.addIngredient);
   }
 
   // Pagination helpers
