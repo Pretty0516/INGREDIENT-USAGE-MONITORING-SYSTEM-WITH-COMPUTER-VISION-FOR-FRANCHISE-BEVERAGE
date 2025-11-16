@@ -17,6 +17,7 @@ import '../screens/product_management_screen.dart';
 import '../screens/ingredient_management_screen.dart';
 import '../screens/add_ingredient_screen.dart';
 import '../screens/add_product_screen.dart';
+import '../screens/order_list_screen.dart';
 
 class AppRoutes {
   // declare all the routes for the application
@@ -33,6 +34,7 @@ class AppRoutes {
   static const String ingredientManagement = '/ingredient-management';
   static const String addIngredient = '/ingredient-add';
   static const String addProduct = '/product-add';
+  static const String orderList = '/order-list';
 
   static GoRouter createRouter() {
     return GoRouter(
@@ -220,6 +222,11 @@ class AppRoutes {
             }
             return AddIngredientScreen(editIngredientId: editId, readOnly: readOnly);
           },
+        ),
+        GoRoute(
+          path: orderList,
+          name: 'order-list',
+          builder: (context, state) => const OrderListScreen(),
         ),
       ],
       errorBuilder: (context, state) => Scaffold(

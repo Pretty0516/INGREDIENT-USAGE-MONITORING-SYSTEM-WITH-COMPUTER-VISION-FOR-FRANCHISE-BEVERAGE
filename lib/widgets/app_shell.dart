@@ -140,7 +140,7 @@ class _AppShellState extends State<AppShell> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _navItem(Icons.list_alt, 'Order List', onTap: () {}),
+            _navItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: _goToOrderList),
             _navItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
           _navItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
           _navItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
@@ -180,7 +180,7 @@ class _AppShellState extends State<AppShell> {
       child: Column(
         children: [
           const SizedBox(height: 12),
-          _sideNavItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: () {}),
+          _sideNavItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: _goToOrderList),
           _sideNavItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
           _sideNavItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
           _sideNavItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
@@ -210,6 +210,10 @@ class _AppShellState extends State<AppShell> {
 
   void _goToIngredient() {
     context.go(AppRoutes.ingredientManagement);
+  }
+
+  void _goToOrderList() {
+    context.go(AppRoutes.orderList);
   }
 
   // side navigation bar item

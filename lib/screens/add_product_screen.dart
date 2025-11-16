@@ -18,6 +18,21 @@ class UpperCaseTextFormatter extends TextInputFormatter {
   }
 }
 
+class HotPriceTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final t = newValue.text;
+    if (t == '-') {
+      return newValue;
+    }
+    final isNumber = RegExp(r"^\d*\.?\d*$");
+    if (isNumber.hasMatch(t)) {
+      return newValue;
+    }
+    return oldValue;
+  }
+}
+
 class AddProductScreen extends StatefulWidget {
   final String? editProductId;
   final bool readOnly;
@@ -1011,7 +1026,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                                   errorText: _hotPriceError,
                                                   keyboardType: TextInputType.number,
                                                   onChanged: (_) => setState(() => _hotPriceError = null),
-                                                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9-]'))],
+                                                  inputFormatters: [HotPriceTextFormatter()],
                                                 ),
                                           labelWidth: 180,
                                         ),
@@ -1109,9 +1124,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                                 for (int i = 0; i < _extras.length; i++)
                                                   Padding(
                                                     padding: const EdgeInsets.symmetric(vertical: 4),
-                                                    child: Text(
-                                                      '${_extras[i]['label']} (RM ${(_extras[i]['price'] as num).toStringAsFixed(2)})',
-                                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
+                                                    child: Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                      decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange)),
+                                                      child: Text(
+                                                        '${_extras[i]['label']} (RM ${(_extras[i]['price'] as num).toStringAsFixed(2)})',
+                                                        style: TextStyle(color: Colors.orange[700] ?? Colors.orange, fontWeight: FontWeight.w700, fontSize: 16),
+                                                      ),
                                                     ),
                                                   ),
                                               ],
