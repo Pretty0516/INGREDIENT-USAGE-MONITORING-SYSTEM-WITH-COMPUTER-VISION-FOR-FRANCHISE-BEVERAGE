@@ -141,6 +141,7 @@ class _AppShellState extends State<AppShell> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             _navItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: _goToOrderList),
+            _navItem(Icons.history, 'Order History', active: widget.activeItem == 'Order History', onTap: () {}),
             _navItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
           _navItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
           _navItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
@@ -181,6 +182,7 @@ class _AppShellState extends State<AppShell> {
         children: [
           const SizedBox(height: 12),
           _sideNavItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: _goToOrderList),
+          _sideNavItem(Icons.history, 'Order History', active: widget.activeItem == 'Order History', onTap: () {}),
           _sideNavItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
           _sideNavItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
           _sideNavItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
