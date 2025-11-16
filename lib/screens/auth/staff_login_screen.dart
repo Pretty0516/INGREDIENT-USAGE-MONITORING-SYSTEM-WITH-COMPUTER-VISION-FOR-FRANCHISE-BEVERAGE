@@ -1,13 +1,12 @@
+// login page
 import 'package:flutter/material.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
 import 'package:form_builder_validators/form_builder_validators.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/auth_service.dart';
-import '../../providers/auth_provider.dart';
 import '../../models/auth_models.dart';
 import '../../models/user_model.dart';
 import '../../routes/app_routes.dart';
@@ -20,11 +19,10 @@ class StaffLoginScreen extends StatefulWidget {
 }
 
 class _StaffLoginScreenState extends State<StaffLoginScreen> {
-  final _formKey = GlobalKey<FormBuilderState>();
-  bool _isLoading = false;
-  bool _obscurePassword = true;
-  bool _rememberMe = false;
-  bool _skipSetup = false;
+  final _formKey = GlobalKey<FormBuilderState>(); // validation
+  bool _isLoading = false; 
+  bool _obscurePassword = true; // password visibility
+  bool _rememberMe = false; 
   Map<String, dynamic> _initialFormValues = const {
     'email': '',
     'password': '',
@@ -38,7 +36,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
   @override
   void dispose() {
-    // Add explicit dispose hook to align with app-wide lifecycle hygiene.
     super.dispose();
   }
 
@@ -51,10 +48,10 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoggedIn = AuthService.currentUser != null;
     return Scaffold(
       body: Stack(
         children: [
+          // background image
           Positioned.fill(
             child: Image.asset(
               'assets/images/background_image.png',
@@ -100,8 +97,10 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
+                            // logo image
                             Image.asset('assets/images/logo.png', height: 44),
                             const SizedBox(width: 12),
+                            // title
                             Text(
                               'LOGIN',
                               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -113,6 +112,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
+                        // subtitle
                         Text(
                           'Impact what you serve. Track every ingredient, ensure\n'
                           'hygiene, and comply with MOH standards.',
@@ -122,8 +122,10 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 24),
-                        isLoggedIn ? _buildLogoutContent(context) : _buildLoginForm(context),
+                        // display the login form
+                        _buildLoginForm(context),
                         const SizedBox(height: 16),
+                        // forget password
                         Center(
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -166,6 +168,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     );
   }
 
+  // login form
   Widget _buildLoginForm(BuildContext context) {
     return FormBuilder(
       key: _formKey,
@@ -173,6 +176,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // email
           FormBuilderTextField(
             name: 'email',
             decoration: InputDecoration(
@@ -211,6 +215,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             },
           ),
           const SizedBox(height: 16),
+          // password
           FormBuilderTextField(
             name: 'password',
             decoration: InputDecoration(
@@ -264,6 +269,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             },
           ),
           const SizedBox(height: 8),
+          // remember me
           Align(
             alignment: Alignment.centerRight,
             child: Row(
@@ -296,8 +302,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
           const SizedBox(height: 24),
+          // login button
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -330,78 +336,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     );
   }
 
-  Widget _buildLogoutContent(BuildContext context) {
-    return FutureBuilder<UserModel?>(
-      future: AuthService.getCurrentUserData(),
-      builder: (context, snapshot) {
-        final user = snapshot.data;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Account Information',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (snapshot.connectionState == ConnectionState.waiting)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8.0),
-                child: SpinKitThreeBounce(color: Colors.green, size: 20),
-              ),
-            if (user != null) ...[
-              Row(
-                children: [
-                  const Icon(Icons.email_outlined),
-                  const SizedBox(width: 8),
-                  Text(user.email),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.badge_outlined),
-                  const SizedBox(width: 8),
-                  Text('Role: ${user.role.name}'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.verified_user_outlined),
-                  const SizedBox(width: 8),
-                  Text('Status: ${user.status.name}'),
-                ],
-              ),
-            ],
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : () => _handleLogout(context),
-                icon: const Icon(Icons.logout),
-                label: const Text(
-                  'Logout',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red[600],
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
+  // handle login function for authentication
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.saveAndValidate()) {
       return;
@@ -437,13 +372,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         }
 
         if (mounted) {
-          if (_skipSetup) {
-            // Enable dev bypass and navigate directly
-            final authProvider = Provider.of<AuthProvider>(context, listen: false);
-            authProvider.setDevBypass(true);
-            context.go(AppRoutes.dashboard);
-            return;
-          }
           switch (user.status) {
             case UserStatus.pending:
             case UserStatus.emailVerified:
@@ -471,7 +399,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
               throw Exception('Failed to get user data');
             }
             if (user.role != UserRole.franchiseOwner) {
-              throw Exception('Invalid login method for this account type');
+              throw Exception('Invalid email or password. Please try again.');
             }
 
             if (_rememberMe) {
@@ -483,10 +411,6 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             // Navigate franchise owners to Staff Management
             final fid = user.franchiseId;
             if (mounted) {
-              if (_skipSetup) {
-                final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                authProvider.setDevBypass(true);
-              }
               if (fid != null && fid.isNotEmpty) {
                 context.go('${AppRoutes.staffManagement}?franchiseId=$fid');
               } else {
@@ -546,75 +470,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     }
   }
 
-  Future<void> _handleLogout(BuildContext context) async {
-    setState(() => _isLoading = true);
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      await authProvider.signOut();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('You have been logged out.'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        // Stay on the same unified screen; it will now show the login form
-        setState(() {});
-        // After showing the login form again, reload saved credentials to prefill
-        _loadSavedCredentials();
-      }
-    } catch (e) {
-      if (mounted) {
-        _showErrorDialog('Logout failed: $e');
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _seedSupervisor() async {
-    try {
-      setState(() => _isLoading = true);
-      // Use current form email if available, otherwise let service generate a unique email
-      _formKey.currentState?.save();
-      final values = _formKey.currentState?.value ?? {};
-      final email = (values['email'] as String?)?.trim();
-
-      final resp = await AuthService.seedSupervisorUser(email: email);
-      if (resp.success) {
-        final data = resp.data ?? {};
-        final seededEmail = (data['email'] ?? '') as String;
-        final tempPassword = (data['temporaryPassword'] ?? '') as String;
-        final fid = (data['franchiseId'] ?? '') as String;
-
-        // Prefill credentials so you can immediately log in
-        _initialFormValues = {
-          'email': seededEmail,
-          'password': tempPassword,
-        };
-        _formKey.currentState?.reset();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Supervisor created for franchise $fid. Temp password: $tempPassword'),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      } else {
-        final msg = resp.message ?? 'Failed to seed supervisor';
-        if (mounted) _showErrorDialog(msg);
-      }
-    } catch (e) {
-      if (mounted) _showErrorDialog('Failed to seed supervisor: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
+  // show error dialog alert box
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
@@ -646,6 +502,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     );
   }
 
+  // Load saved credentials on init use shared preferences
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     final remember = prefs.getBool('remember_me') ?? false;
@@ -690,48 +547,5 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     await prefs.setBool('remember_me', false);
     await prefs.remove('remember_email');
     await prefs.remove('remember_password');
-  }
-
-  void _showContactSupportDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Contact Support'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('If you need help with your login, please contact:'),
-            SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(Icons.email, size: 16),
-                SizedBox(width: 8),
-                Text('support@franchise.com'),
-              ],
-            ),
-            SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.phone, size: 16),
-                SizedBox(width: 8),
-                Text('+1 (555) 123-4567'),
-              ],
-            ),
-            SizedBox(height: 16),
-            Text(
-              'Or contact your franchise owner directly.',
-              style: TextStyle(fontStyle: FontStyle.italic),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
   }
 }

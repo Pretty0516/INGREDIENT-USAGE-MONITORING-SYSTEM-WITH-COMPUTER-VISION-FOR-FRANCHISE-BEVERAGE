@@ -1,3 +1,4 @@
+// set route for each page in the application
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -15,8 +16,10 @@ import '../screens/suspended_screen.dart';
 import '../screens/product_management_screen.dart';
 import '../screens/ingredient_management_screen.dart';
 import '../screens/add_ingredient_screen.dart';
+import '../screens/add_product_screen.dart';
 
 class AppRoutes {
+  // declare all the routes for the application
   static const String splash = '/';
   static const String login = '/login';
   static const String franchiseOwnerRegistration = '/franchise-owner-registration';
@@ -29,6 +32,7 @@ class AppRoutes {
   static const String productManagement = '/product-management';
   static const String ingredientManagement = '/ingredient-management';
   static const String addIngredient = '/ingredient-add';
+  static const String addProduct = '/product-add';
 
   static GoRouter createRouter() {
     return GoRouter(
@@ -185,6 +189,20 @@ class AppRoutes {
           builder: (context, state) => const ProductManagementScreen(),
         ),
         GoRoute(
+          path: addProduct,
+          name: 'product-add',
+          builder: (context, state) {
+            final extra = state.extra;
+            String? editId;
+            bool readOnly = false;
+            if (extra is Map<String, dynamic>) {
+              editId = extra['editProductId'] as String?;
+              readOnly = (extra['readOnly'] as bool?) ?? false;
+            }
+            return AddProductScreen(editProductId: editId, readOnly: readOnly);
+          },
+        ),
+        GoRoute(
           path: ingredientManagement,
           name: 'ingredient-management',
           builder: (context, state) => const IngredientManagementScreen(),
@@ -192,7 +210,16 @@ class AppRoutes {
         GoRoute(
           path: addIngredient,
           name: 'ingredient-add',
-          builder: (context, state) => const AddIngredientScreen(),
+          builder: (context, state) {
+            final extra = state.extra;
+            String? editId;
+            bool readOnly = false;
+            if (extra is Map<String, dynamic>) {
+              editId = extra['editIngredientId'] as String?;
+              readOnly = (extra['readOnly'] as bool?) ?? false;
+            }
+            return AddIngredientScreen(editIngredientId: editId, readOnly: readOnly);
+          },
         ),
       ],
       errorBuilder: (context, state) => Scaffold(

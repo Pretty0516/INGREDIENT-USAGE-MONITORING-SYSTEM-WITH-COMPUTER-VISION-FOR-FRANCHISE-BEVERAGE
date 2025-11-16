@@ -1,12 +1,10 @@
+// for franchise owner to add ingredient
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-
 import '../widgets/app_shell.dart';
-import '../providers/auth_provider.dart';
 import '../routes/app_routes.dart';
 
 class IngredientItem {
@@ -35,13 +33,15 @@ class IngredientItem {
       return 0.0;
     }
 
+    // the collection name is ingredients
+    // the field is id, name, category, unit, stockQuantity, amountPerUnit, imageUrl
     return IngredientItem(
       id: id,
-      name: (m['name'] ?? m['ingredientName'] ?? 'Unnamed') as String,
+      name: m['name'] as String,
       category: (m['category'] ?? 'Uncategorized') as String,
-      unit: (m['unit'] ?? m['uom'] ?? 'unit') as String,
-      stockQuantity: _toD(m['stockQuantity'] ?? m['stock'] ?? 0.0),
-      amountPerUnit: _toD(m['amountPerUnit'] ?? m['amount'] ?? 0.0),
+      unit: m['unit'] as String,
+      stockQuantity: _toD(m['stockQuantity'] ?? 0.0),
+      amountPerUnit: _toD(m['amountPerUnit'] ?? 0.0),
       imageUrl: m['imageUrl'] as String?,
     );
   }
@@ -56,16 +56,15 @@ class IngredientManagementScreen extends StatefulWidget {
 
 class _IngredientManagementScreenState extends State<IngredientManagementScreen> {
   final List<IngredientItem> _ingredients = [];
-  String _searchQuery = '';
-  String _selectedCategory = 'All Category';
+  String _searchQuery = ''; // search by name
+  String _selectedCategory = 'All Category'; // default category is all category
   bool _loading = false;
-  bool _isApplying = false;
-  bool _seeding = false;
-  int _currentPage = 1;
-  int _pageSize = 8;
+  bool _isApplying = false; // apply filter indicator
+  int _currentPage = 1; // current page number; default 1
+  final int _pageSize = 8; // default page size is 8
   List<String> _categories = const ['All Category'];
 
-  // Custom dropdown infra for Category filter
+  // Custom dropdown for Category filter
   final GlobalKey _categoryFilterKey = GlobalKey();
   OverlayEntry? _categoryMenuOverlay;
   final LayerLink _categoryLink = LayerLink();
@@ -77,74 +76,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     _loadCategories();
   }
 
-  Future<void> _seedDemoIngredients() async {
-    if (_seeding) return;
-    setState(() => _seeding = true);
-    try {
-      final col = FirebaseFirestore.instance.collection('ingredients');
-
-      final demo = [
-        {
-          'id': 'i1',
-          'name': 'Sugar',
-          'category': 'Basic',
-          'unit': 'g',
-          'stockQuantity': 10000,
-          'amountPerUnit': 10,
-          'imageUrl': null,
-        },
-        {
-          'id': 'i2',
-          'name': 'Coffee Powder',
-          'category': 'Coffee',
-          'unit': 'g',
-          'stockQuantity': 5000,
-          'amountPerUnit': 10,
-          'imageUrl': null,
-        },
-        {
-          'id': 'i3',
-          'name': 'Condensed Milk',
-          'category': 'Dairy',
-          'unit': 'ml',
-          'stockQuantity': 8000,
-          'amountPerUnit': 30,
-          'imageUrl': null,
-        },
-        {
-          'id': 'i4',
-          'name': 'Evaporated Milk',
-          'category': 'Dairy',
-          'unit': 'ml',
-          'stockQuantity': 7000,
-          'amountPerUnit': 30,
-          'imageUrl': null,
-        },
-      ];
-
-      for (final m in demo) {
-        final id = m['id'] as String;
-        final data = Map<String, dynamic>.from(m)..remove('id');
-        await col.doc(id).set(data, SetOptions(merge: true));
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Seeded demo ingredients to Firestore')),
-        );
-      }
-      await _loadIngredients();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to seed ingredients: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _seeding = false);
-    }
-  }
-
+  // load ingredients collection data from firebase
   Future<void> _loadIngredients() async {
     setState(() => _loading = true);
     try {
@@ -161,29 +93,23 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
           ..addAll(items);
       });
     } catch (e) {
-      // Demo data fallback
       setState(() {
         _ingredients
-          ..clear()
-          ..addAll([
-            IngredientItem(id: 'i1', name: 'Sugar', category: 'Basic', unit: 'g', stockQuantity: 10000, amountPerUnit: 10, imageUrl: null),
-            IngredientItem(id: 'i2', name: 'Coffee Powder', category: 'Coffee', unit: 'g', stockQuantity: 5000, amountPerUnit: 10, imageUrl: null),
-            IngredientItem(id: 'i3', name: 'Condensed Milk', category: 'Dairy', unit: 'ml', stockQuantity: 8000, amountPerUnit: 30, imageUrl: null),
-            IngredientItem(id: 'i4', name: 'Evaporated Milk', category: 'Dairy', unit: 'ml', stockQuantity: 7000, amountPerUnit: 30, imageUrl: null),
-          ]);
+          ..clear();
       });
     } finally {
       setState(() => _loading = false);
     }
   }
 
+  // load category collection data from firebase
   Future<void> _loadCategories() async {
     try {
       final snap = await FirebaseFirestore.instance.collection('category').get();
       final set = <String>{};
       for (final d in snap.docs) {
         final m = d.data();
-        final c = (m['name'] ?? m['category'] ?? '').toString().trim();
+        final c = m['name'].toString().trim();
         if (c.isNotEmpty) set.add(c);
       }
       final list = ['All Category', ...set.toList()..sort()];
@@ -196,11 +122,13 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     } catch (_) {}
   }
 
+  // filter ingredients by search query and selected category
   List<IngredientItem> _filtered() {
     Iterable<IngredientItem> list = _ingredients;
     if (_searchQuery.isNotEmpty) {
+      // filter by standardizing lower case name
       final q = _searchQuery.toLowerCase();
-      list = list.where((i) => i.name.toLowerCase().contains(q));
+      list = list.where((i) => i.name.toLowerCase().contains(q)); 
     }
     if (_selectedCategory != 'All Category') {
       list = list.where((i) => i.category == _selectedCategory);
@@ -208,14 +136,16 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     return list.toList();
   }
 
+  // top bar 
   @override
   Widget build(BuildContext context) {
     final filtered = _filtered();
     final total = filtered.length;
+    // calculate total pages
     final totalPages = ((total + _pageSize - 1) ~/ _pageSize).clamp(1, 9999);
     final displayed = _paginate(filtered);
     return AppShell(
-      activeItem: 'Ingredient',
+      activeItem: 'Ingredient', // set navigation active item to ingredient
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -291,7 +221,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
       ),
     );
   }
-
+  // search bar and the add ingredient button
   Widget _buildFilters(int total) {
     return Container(
       width: double.infinity,
@@ -351,25 +281,10 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                height: 44,
-                child: OutlinedButton.icon(
-                  onPressed: _seeding ? null : _seedDemoIngredients,
-                  icon: const Icon(Icons.cloud_upload, size: 20, color: Colors.orange),
-                  label: Text(_seeding ? 'SEEDING...' : 'SEED DEMO INGREDIENTS'),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.orange),
-                    foregroundColor: Colors.orange,
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
+          // category filter and apply/clear buttons
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -417,6 +332,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     );
   }
 
+  // table header for the ingredient list 
   Widget _buildTableHeader() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -440,6 +356,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     );
   }
 
+  // build each row for the ingredient list
   Widget _buildIngredientRow(IngredientItem i) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
@@ -469,6 +386,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
             flex: 2,
             child: Row(
               children: [
+                // edit button
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.orange),
@@ -478,6 +396,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
                   child: const Icon(Icons.edit, color: Colors.orange, size: 18),
                 ),
                 const SizedBox(width: 8),
+                // view button
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.orange),
@@ -494,18 +413,17 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     );
   }
 
+  // edit function
   void _onEdit(IngredientItem i) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Edit ${i.name} coming soon')),
-    );
+    context.go(AppRoutes.addIngredient, extra: {'editIngredientId': i.id});
   }
 
+  // view function
   void _onView(IngredientItem i) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('View ${i.name} coming soon')),
-    );
+    context.go(AppRoutes.addIngredient, extra: {'editIngredientId': i.id, 'readOnly': true});
   }
 
+  // add button function
   void _onAddIngredient() {
     context.go(AppRoutes.addIngredient);
   }
@@ -518,6 +436,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     return input.sublist(start, end);
   }
 
+  // build each page button for pagination
   Widget _buildPageButton(int page) {
     final isActive = _currentPage == page;
     return InkWell(
@@ -582,6 +501,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     );
   }
 
+  // show category dropdown function
   void _showCategoryMenu() {
     _hideCategoryMenu();
 
@@ -651,17 +571,18 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
 
     Overlay.of(context, rootOverlay: true).insert(_categoryMenuOverlay!);
   }
-
+  // hide category menu function
   void _hideCategoryMenu() {
     _categoryMenuOverlay?.remove();
     _categoryMenuOverlay = null;
   }
-
+  // count ingredient for each category function
   int _countForCategory(String label) {
     if (label == 'All Category') return _ingredients.length;
     return _ingredients.where((i) => i.category == label).length;
   }
 
+  // apply filters function
   void _applyFilters() {
     if (_isApplying) return;
     setState(() {
@@ -680,6 +601,7 @@ class _IngredientManagementScreenState extends State<IngredientManagementScreen>
     });
   }
 
+  // clear filters function
   void _clearFilters() {
     setState(() {
       _selectedCategory = 'All Category';

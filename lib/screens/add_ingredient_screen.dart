@@ -15,7 +15,9 @@ import '../providers/auth_provider.dart';
 import '../routes/app_routes.dart';
 
 class AddIngredientScreen extends StatefulWidget {
-  const AddIngredientScreen({super.key});
+  final String? editIngredientId;
+  final bool readOnly;
+  const AddIngredientScreen({super.key, this.editIngredientId, this.readOnly = false});
 
   @override
   State<AddIngredientScreen> createState() => _AddIngredientScreenState();
@@ -69,6 +71,9 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    if (widget.editIngredientId != null) {
+      _loadIngredientForEdit(widget.editIngredientId!);
+    }
   }
 
   @override
@@ -96,10 +101,6 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       }
       setState(() {
         _categories = set.toList()..sort();
-        if (_categories.isNotEmpty && _categoryLabel.isEmpty) {
-          _categoryLabel = _categories.first;
-          _selectedCategory = _categories.first;
-        }
       });
     } catch (_) {}
   }
@@ -164,6 +165,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
+    if (widget.readOnly) return;
     final name = _nameController.text.trim();
     final categoryCandidate = _categoryLabel.trim().isNotEmpty
         ? _categoryLabel.trim()
@@ -242,17 +244,20 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
         'imageName': _uploadedImagePath ?? '',
         'createdAt': FieldValue.serverTimestamp(),
       };
-      debugPrint('Saving ingredient to $colPathStr');
-      final docRef = await col.add(data);
-      debugPrint('Ingredient saved: id=${docRef.id}');
+      if (widget.editIngredientId != null) {
+        await col.doc(widget.editIngredientId).update(data);
+      } else {
+        final docRef = await col.add(data);
+        (docRef); // silence unused warning if any
+      }
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFFF6EDDF),
           title: const Text('Success', style: TextStyle(color: Colors.black)),
-          content: const Text(
-            'Ingredient has add successfully',
+          content: Text(
+            widget.editIngredientId != null ? 'Ingredient updated successfully' : 'Ingredient has add successfully',
             style: TextStyle(color: Colors.black, fontSize: 18),
           ),
           actions: [
@@ -278,6 +283,27 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     }
   }
 
+  Future<void> _loadIngredientForEdit(String id) async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('ingredients').doc(id).get();
+      final m = snap.data();
+      if (m == null) return;
+      setState(() {
+        _nameController.text = (m['name'] ?? '').toString();
+        _categoryLabel = (m['category'] ?? '').toString();
+        _selectedCategory = _categoryLabel.isNotEmpty ? _categoryLabel : null;
+        _amountPerUnitController.text = ((m['amountPerUnit'] ?? 0).toString());
+        _unitController.text = (m['unit'] ?? '').toString();
+        _thresholdController.text = ((m['thresholdQuantity'] ?? 0).toString());
+        _restockController.text = ((m['restockQuantity'] ?? 0).toString());
+        _supplierNameController.text = (m['supplierName'] ?? '').toString();
+        _supplierContactController.text = (m['supplierContact'] ?? '').toString();
+        _uploadedImageUrl = (m['imageUrl'] ?? '').toString();
+        _uploadedImagePath = (m['imageName'] ?? '').toString();
+      });
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width >= 900;
@@ -292,7 +318,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 8),
-                const Text('Add Ingredient Form', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
+                Text(widget.readOnly ? 'View Ingredient' : (widget.editIngredientId != null ? 'Edit Ingredient' : 'Add Ingredient'), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () => context.go(AppRoutes.ingredientManagement),
@@ -341,15 +367,23 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
                           alignment: Alignment.centerRight,
                           child: SizedBox(
                             height: 44,
-                            child: ElevatedButton(
-                              onPressed: _isSubmitting ? null : _submit,
+                          child: ElevatedButton(
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : (widget.readOnly
+                                      ? () {
+                                          Navigator.of(context).pushReplacement(
+                                            MaterialPageRoute(builder: (_) => AddIngredientScreen(editIngredientId: widget.editIngredientId)),
+                                          );
+                                        }
+                                      : _submit),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.orange[600],
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 padding: const EdgeInsets.symmetric(horizontal: 24),
                               ),
-                              child: const Text('Add'),
+                              child: Text(widget.readOnly ? 'EDIT' : (widget.editIngredientId != null ? 'UPDATE' : 'ADD')),
                             ),
                           ),
                         ),
@@ -362,7 +396,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
                           height: wide ? 220 : 180,
                           child: Center(
                             child: InkWell(
-                                  onTap: _isUploadingImage ? null : _pickImage,
+                                  onTap: widget.readOnly || _isUploadingImage ? null : _pickImage,
                                   child: Container(
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
@@ -375,6 +409,13 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
                                             child: ClipRRect(
                                               borderRadius: BorderRadius.circular(12),
                                               child: Image.memory(_pendingImageBytes!, fit: BoxFit.cover),
+                                            ),
+                                          )
+                                        else if (_uploadedImageUrl != null && _uploadedImageUrl!.isNotEmpty)
+                                          Positioned.fill(
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(12),
+                                              child: Image.network(_uploadedImageUrl!, fit: BoxFit.cover),
                                             ),
                                           )
                                         else
@@ -397,87 +438,103 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
                             children: [
                               _rowField(
                                 label: 'Name',
-                                child: _textField(
-                                  controller: _nameController,
-                                  errorText: _nameError,
-                                  onChanged: (_) => setState(() => _nameError = null),
-                                  inputFormatters: [UpperCaseTextFormatter()],
-                                ),
+                                child: widget.readOnly
+                                    ? Text(_nameController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                                    : _textField(
+                                        controller: _nameController,
+                                        errorText: _nameError,
+                                        onChanged: (_) => setState(() => _nameError = null),
+                                        inputFormatters: [UpperCaseTextFormatter()],
+                                      ),
                               ),
-                              _rowField(
+                              _rowFieldCompact(
                                 label: 'Category',
                                 child: _buildCategoryField(),
+                                labelWidth: 180,
+                                errorText: _categoryError,
                               ),
                               Row(
                                 children: [
-                                  Expanded(
+                                  Expanded(flex: 3,
                                     child: _rowFieldCompact(
                                       label: 'Amount Per Unit',
-                                      child: _textField(
-                                        controller: _amountPerUnitController,
-                                        errorText: _amountError,
-                                        keyboardType: TextInputType.number,
-                                        onChanged: (_) => setState(() => _amountError = null),
-                                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                      ),
+                                      child: widget.readOnly
+                                          ? Text(_amountPerUnitController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                                          : _textField(
+                                              controller: _amountPerUnitController,
+                                              errorText: _amountError,
+                                              keyboardType: TextInputType.number,
+                                              onChanged: (_) => setState(() => _amountError = null),
+                                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                            ),
                                       labelWidth: 180,
                                     ),
                                   ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
+                                  const SizedBox(width: 10),
+                                  Expanded(flex: 1,
                                     child: _rowFieldCompact(
                                       label: 'Unit',
-                                      child: _textField(
-                                        controller: _unitController,
-                                        errorText: _unitError,
-                                        onChanged: (_) => setState(() => _unitError = null),
-                                      ),
-                                      labelWidth: 180,
+                                      child: widget.readOnly
+                                          ? Text(_unitController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                                          : _textField(
+                                              controller: _unitController,
+                                              errorText: _unitError,
+                                              onChanged: (_) => setState(() => _unitError = null),
+                                            ),
+                                      labelWidth: 50,
                                     ),
                                   ),
                                 ],
                               ),
                               _rowField(
                                 label: 'Threshold Quantity',
-                                child: _textField(
-                                  controller: _thresholdController,
-                                  errorText: _thresholdError,
-                                  keyboardType: TextInputType.number,
-                                  onChanged: (_) => setState(() => _thresholdError = null),
-                                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                ),
+                                child: widget.readOnly
+                                    ? Text(_thresholdController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                                    : _textField(
+                                        controller: _thresholdController,
+                                        errorText: _thresholdError,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (_) => setState(() => _thresholdError = null),
+                                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      ),
                               ),
                               _rowField(
                                 label: 'Restock Quantity',
-                                child: _textField(
-                                  controller: _restockController,
-                                  errorText: _restockError,
-                                  keyboardType: TextInputType.number,
-                                  onChanged: (_) => setState(() => _restockError = null),
-                                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                ),
+                                child: widget.readOnly
+                                    ? Text(_restockController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                                    : _textField(
+                                        controller: _restockController,
+                                        errorText: _restockError,
+                                        keyboardType: TextInputType.number,
+                                        onChanged: (_) => setState(() => _restockError = null),
+                                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      ),
                               ),
                               _rowField(
                                 label: 'Supplier Name',
-                                child: CompositedTransformTarget(
-                                  link: _supplierNameFieldLink,
-                                  child: Container(
-                                    key: _supplierNameFieldKey,
-                                    child: _textField(
-                                      controller: _supplierNameController,
-                                      errorText: _supplierNameError,
-                                      onChanged: (val) {
-                                        setState(() => _supplierNameError = null);
-                                        _scheduleSupplierLookup(val);
-                                      },
-                                      inputFormatters: [UpperCaseTextFormatter()],
-                                    ),
-                                  ),
-                                ),
+                                child: widget.readOnly
+                                    ? Text(_supplierNameController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                                    : CompositedTransformTarget(
+                                        link: _supplierNameFieldLink,
+                                        child: Container(
+                                          key: _supplierNameFieldKey,
+                                          child: _textField(
+                                            controller: _supplierNameController,
+                                            errorText: _supplierNameError,
+                                            onChanged: (val) {
+                                              setState(() => _supplierNameError = null);
+                                              _scheduleSupplierLookup(val);
+                                            },
+                                            inputFormatters: [UpperCaseTextFormatter()],
+                                          ),
+                                        ),
+                                      ),
                               ),
                               _rowField(
                                 label: 'Supplier Contact',
-                                child: _textField(controller: _supplierContactController, errorText: _supplierContactError, onChanged: (_) => setState(() => _supplierContactError = null)),
+                                child: widget.readOnly
+                                    ? Text(_supplierContactController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                                    : _textField(controller: _supplierContactController, errorText: _supplierContactError, onChanged: (_) => setState(() => _supplierContactError = null)),
                               ),
                             ],
                           ),
@@ -501,9 +558,9 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       filled: true,
-      fillColor: Colors.white,
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.orange)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.orange.shade700)),
+      fillColor: widget.readOnly ? Colors.transparent : Colors.white,
+      enabledBorder: widget.readOnly ? InputBorder.none : OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.orange)),
+      focusedBorder: widget.readOnly ? InputBorder.none : OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.orange.shade700)),
     );
   }
 
@@ -523,7 +580,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     );
   }
 
-  Widget _rowFieldCompact({required String label, required Widget child, double labelWidth = 120}) {
+  Widget _rowFieldCompact({required String label, required Widget child, double labelWidth = 120, String? errorText}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -531,7 +588,12 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
         children: [
           SizedBox(
             width: labelWidth,
-            child: _tableLabel(label),
+            child: Row(
+              children: [
+                Expanded(child: _tableLabel(label)),
+                if (errorText != null) const Icon(Icons.error_outline, color: Colors.red, size: 18),
+              ],
+            ),
           ),
           Expanded(child: child),
         ],
@@ -666,14 +728,18 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
       return Row(
         children: [
           Expanded(
-            child: _textField(
-              controller: _categoryTextController,
-              errorText: _categoryError,
-              onChanged: (_) => setState(() => _categoryError = null),
-            ),
+            child: widget.readOnly
+                ? Text(_categoryTextController.text, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))
+                : _textField(
+                    controller: _categoryTextController,
+                    errorText: null,
+                    onChanged: (_) => setState(() => _categoryError = null),
+                  ),
           ),
-          const SizedBox(width: 8),
-          IconButton(icon: Icon(Icons.add_circle_outline, color: Colors.orange), onPressed: _promptAddCategory),
+          if (!widget.readOnly) ...[
+            const SizedBox(width: 8),
+            IconButton(icon: Icon(Icons.add_circle_outline, color: Colors.orange), onPressed: _promptAddCategory),
+          ],
         ],
       );
     }
@@ -684,22 +750,28 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
             link: _categoryEditLink,
             child: InkWell(
               key: _categoryEditKey,
-              onTap: _showCategoryMenu,
+              onTap: widget.readOnly ? null : _showCategoryMenu,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: widget.readOnly ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange),
+                  border: widget.readOnly ? null : Border.all(color: Colors.orange),
                   color: Colors.white,
                 ),
-                child: Text(_categoryLabel.isEmpty ? 'Select' : _categoryLabel, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(_categoryLabel.isEmpty ? 'Select' : _categoryLabel, textAlign: TextAlign.left, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18, color: Colors.black))),
+                    if (!widget.readOnly) const Icon(Icons.arrow_drop_down, color: Colors.orange),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        IconButton(icon: Icon(Icons.arrow_drop_down, color: Colors.orange), onPressed: _showCategoryMenu),
-        IconButton(icon: Icon(Icons.add_circle_outline, color: Colors.orange), onPressed: _promptAddCategory),
+        if (!widget.readOnly) ...[
+          const SizedBox(width: 8),
+          IconButton(icon: Icon(Icons.add_circle_outline, color: Colors.orange), onPressed: _promptAddCategory),
+        ],
       ],
     );
   }
@@ -712,7 +784,7 @@ class _AddIngredientScreenState extends State<AddIngredientScreen> {
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
     final box = renderObject as RenderBox;
     final size = box.size;
-    final items = [_categoryLabel, ..._categories.where((e) => e != _categoryLabel)];
+    final items = _categories;
     _categoryOverlay = OverlayEntry(
       builder: (context) {
         return Stack(

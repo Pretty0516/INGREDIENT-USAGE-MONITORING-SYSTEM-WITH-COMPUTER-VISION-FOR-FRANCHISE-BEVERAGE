@@ -1,8 +1,13 @@
 import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
+import 'add_product_screen.dart';
+import 'package:go_router/go_router.dart';
+import '../routes/app_routes.dart';
 
 import '../widgets/app_shell.dart';
 import '../providers/auth_provider.dart';
@@ -11,19 +16,33 @@ class ProductItem {
   final String id;
   final String name;
   final String category;
+  final String? categoryName;
   final int ingredientRequired;
   final double hotPrice;
   final double coldPrice;
   final String? imageUrl;
+  final Map<String, bool> optionsIce;
+  final Map<String, bool> optionsSugar;
+  final Map<String, bool> optionsTexture;
+  final List<String> ingredientNames;
+  final Map<String, dynamic> extras;
+  final bool hasHot;
 
   ProductItem({
     required this.id,
     required this.name,
     required this.category,
+    this.categoryName,
     required this.ingredientRequired,
     required this.hotPrice,
     required this.coldPrice,
     this.imageUrl,
+    required this.optionsIce,
+    required this.optionsSugar,
+    required this.optionsTexture,
+    required this.ingredientNames,
+    required this.extras,
+    required this.hasHot,
   });
 
   factory ProductItem.fromMap(String id, Map<String, dynamic> m) {
@@ -32,17 +51,31 @@ class ProductItem {
       if (v is String) return double.tryParse(v) ?? 0.0;
       return 0.0;
     }
+    String _toCategory(dynamic v, Map<String, dynamic> m) {
+      final cn = (m['categoryName'] ?? '').toString();
+      if (cn.isNotEmpty) return cn;
+      if (v is String) return v;
+      if (v is DocumentReference) return v.id;
+      return 'Uncategorized';
+    }
 
     return ProductItem(
       id: id,
       name: (m['name'] ?? m['productName'] ?? 'Unnamed') as String,
-      category: (m['category'] ?? 'Uncategorized') as String,
+      category: _toCategory(m['category'] ?? 'Uncategorized', m),
+      categoryName: (m['categoryName'] ?? '') as String?,
       ingredientRequired: (m['ingredientRequired'] ?? m['ingredients'] ?? 0) is int
           ? (m['ingredientRequired'] ?? m['ingredients'] ?? 0) as int
           : int.tryParse('${m['ingredientRequired'] ?? m['ingredients'] ?? 0}') ?? 0,
       hotPrice: _toD(m['hotPrice'] ?? m['hot'] ?? 0.0),
       coldPrice: _toD(m['coldPrice'] ?? m['cold'] ?? 0.0),
       imageUrl: m['imageUrl'] as String?,
+      optionsIce: ((m['options'] ?? {}) as Map<String, dynamic>)['ice']?.map((k, v) => MapEntry('$k', v == true))?.cast<String, bool>() ?? <String, bool>{},
+      optionsSugar: ((m['options'] ?? {}) as Map<String, dynamic>)['sugar']?.map((k, v) => MapEntry('$k', v == true))?.cast<String, bool>() ?? <String, bool>{},
+      optionsTexture: ((m['options'] ?? {}) as Map<String, dynamic>)['texture']?.map((k, v) => MapEntry('$k', v == true))?.cast<String, bool>() ?? <String, bool>{},
+      ingredientNames: (m['ingredientNames'] is List) ? (m['ingredientNames'] as List).map((e) => '$e').toList() : <String>[],
+      extras: (m['extras'] is Map) ? (m['extras'] as Map<String, dynamic>) : <String, dynamic>{},
+      hasHot: m.containsKey('hotPrice') && m['hotPrice'] != null,
     );
   }
 }
@@ -60,136 +93,51 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
   String _selectedCategory = 'All Category';
   bool _loading = false;
   bool _isApplying = false;
-  bool _seeding = false;
   int _currentPage = 1;
   int _pageSize = 8;
   // Custom dropdown infra for Category filter
   final GlobalKey _categoryFilterKey = GlobalKey();
   OverlayEntry? _categoryMenuOverlay;
   final LayerLink _categoryLink = LayerLink();
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _productsSub;
 
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    _subscribeProducts();
   }
 
-  Future<void> _seedDemoProducts() async {
-    if (_seeding) return;
-    setState(() => _seeding = true);
-    try {
-      final authProvider = context.read<AuthProvider>();
-      final fid = authProvider.currentUser?.franchiseId;
-      CollectionReference<Map<String, dynamic>> col;
-      if (fid != null && fid.isNotEmpty) {
-        col = FirebaseFirestore.instance
-            .collection('franchises')
-            .doc(fid)
-            .collection('products');
-      } else {
-        col = FirebaseFirestore.instance.collection('products');
-      }
-
-      final demo = [
-        {
-          'id': 'p1',
-          'name': 'Kopi O',
-          'category': 'Coffee',
-          'ingredientRequired': 2,
-          'hotPrice': 1.30,
-          'coldPrice': 2.00,
-          'imageUrl': null,
-        },
-        {
-          'id': 'p2',
-          'name': 'Kopi C',
-          'category': 'Coffee',
-          'ingredientRequired': 2,
-          'hotPrice': 1.30,
-          'coldPrice': 2.00,
-          'imageUrl': null,
-        },
-        {
-          'id': 'p3',
-          'name': 'Teh O',
-          'category': 'Tea',
-          'ingredientRequired': 2,
-          'hotPrice': 1.30,
-          'coldPrice': 2.00,
-          'imageUrl': null,
-        },
-        {
-          'id': 'p4',
-          'name': 'Teh C',
-          'category': 'Tea',
-          'ingredientRequired': 2,
-          'hotPrice': 1.30,
-          'coldPrice': 2.00,
-          'imageUrl': null,
-        },
-      ];
-
-      for (final m in demo) {
-        final id = m['id'] as String;
-        final data = Map<String, dynamic>.from(m)..remove('id');
-        await col.doc(id).set(data, SetOptions(merge: true));
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Seeded demo products to Firestore')),
-        );
-      }
-      await _loadProducts();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to seed products: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _seeding = false);
-    }
+  @override
+  void dispose() {
+    _productsSub?.cancel();
+    super.dispose();
   }
 
-  Future<void> _loadProducts() async {
+  void _subscribeProducts() {
     setState(() => _loading = true);
-    try {
-      final authProvider = context.read<AuthProvider>();
-      final fid = authProvider.currentUser?.franchiseId;
-      Query<Map<String, dynamic>> query;
-      if (fid != null && fid.isNotEmpty) {
-        query = FirebaseFirestore.instance
-            .collection('franchises')
-            .doc(fid)
-            .collection('products')
-            .orderBy('name');
-      } else {
-        // Fallback to a top-level products collection
-        query = FirebaseFirestore.instance
-            .collection('products')
-            .orderBy('name');
-      }
-
-      final snap = await query.get();
+    final query = FirebaseFirestore.instance
+        .collection('products')
+        .orderBy('name');
+    _productsSub?.cancel();
+    _productsSub = query.snapshots().listen((snap) {
       final items = snap.docs
           .map((d) => ProductItem.fromMap(d.id, d.data()))
           .toList();
-
       setState(() {
         _products
           ..clear()
           ..addAll(items);
+        _loading = false;
       });
-    } catch (e) {
-      // If collection not found or any error, keep UI functional with demo data
+    }, onError: (e) {
       setState(() {
-        _products
-          ..clear();
+        _products.clear();
+        _loading = false;
       });
-    } finally {
-      setState(() => _loading = false);
-    }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load products: $e')),
+      );
+    });
   }
 
   List<String> get _categories {
@@ -358,21 +306,6 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              SizedBox(
-                height: 44,
-                child: OutlinedButton.icon(
-                  onPressed: _seeding ? null : _seedDemoProducts,
-                  icon: const Icon(Icons.cloud_upload, size: 20, color: Colors.orange),
-                  label: Text(_seeding ? 'SEEDING...' : 'SEED DEMO PRODUCTS'),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.orange),
-                    foregroundColor: Colors.orange,
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -469,9 +402,9 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
               ],
             ),
           ),
-          Expanded(flex: 2, child: Text('${p.ingredientRequired}')),
+          Expanded(flex: 2, child: Text('${p.ingredientNames.length}')),
           Expanded(flex: 2, child: Text(p.category)),
-          Expanded(flex: 2, child: Text(p.hotPrice.toStringAsFixed(2))),
+          Expanded(flex: 2, child: Text(p.hasHot ? p.hotPrice.toStringAsFixed(2) : '-')),
           Expanded(flex: 2, child: Text(p.coldPrice.toStringAsFixed(2))),
           Expanded(
             flex: 2,
@@ -503,21 +436,330 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
   }
 
   void _onEdit(ProductItem p) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Edit ${p.name} coming soon')),
-    );
+    context.go(AppRoutes.addProduct, extra: {'editProductId': p.id});
   }
 
   void _onView(ProductItem p) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('View ${p.name} coming soon')),
+    context.go(AppRoutes.addProduct, extra: {'editProductId': p.id, 'readOnly': true});
+  }
+
+  InputDecoration _pmInputDecoration() {
+    return InputDecoration(
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      filled: true,
+      fillColor: Colors.white,
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.orange)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.orange)),
+    );
+  }
+
+  Widget _pmLabel(String text) {
+    return Text(text, style: const TextStyle(fontSize: 18, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis, softWrap: false);
+  }
+
+  void _showViewDialog(ProductItem p) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFFF6EDDF),
+          title: const Text('Product Details', style: TextStyle(color: Colors.black)),
+          content: SizedBox(
+            width: 900,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 1,
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: Container(
+                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black87, width: 1.2)),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: p.imageUrl != null && p.imageUrl!.isNotEmpty
+                              ? Image.network(p.imageUrl!, fit: BoxFit.cover)
+                              : const Icon(Icons.image, size: 30, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(children: [SizedBox(width: 180, child: _pmLabel('Name')), Expanded(child: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)))]),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(children: [SizedBox(width: 180, child: _pmLabel('Category')), Expanded(child: Text(p.category, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)))]),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(children: [SizedBox(width: 180, child: _pmLabel('Ingredient Required')), Expanded(child: Text('${p.ingredientNames.length}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)))]),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(children: [SizedBox(width: 180, child: _pmLabel('Hot Price (RM)')), Expanded(child: Text(p.hotPrice.toStringAsFixed(2), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)))]),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(children: [SizedBox(width: 180, child: _pmLabel('Cold Price (RM)')), Expanded(child: Text(p.coldPrice.toStringAsFixed(2), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)))]),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showEditDialog(ProductItem p) {
+    final nameCtrl = TextEditingController(text: p.name);
+    final categoryCtrl = TextEditingController(text: p.category);
+    final hotCtrl = TextEditingController(text: p.hotPrice == 0.0 ? '' : p.hotPrice.toStringAsFixed(2));
+    final coldCtrl = TextEditingController(text: p.coldPrice.toStringAsFixed(2));
+    String selectedCategory = p.category;
+    final Set<String> iceSel = p.optionsIce.entries.where((e) => e.value).map((e) => e.key).toSet();
+    final Set<String> sugarSel = p.optionsSugar.entries.where((e) => e.value).map((e) => e.key).toSet();
+    final Set<String> textureSel = p.optionsTexture.entries.where((e) => e.value).map((e) => e.key).toSet();
+    final List<String> ingredientNames = List<String>.from(p.ingredientNames);
+    final List<Map<String, dynamic>> extras = p.extras.entries.map((e) {
+      final price = (e.value is Map && (e.value as Map)['price'] is num) ? ((e.value as Map)['price'] as num).toDouble() : 0.0;
+      return {'label': e.key, 'price': price};
+    }).toList();
+    final extraLabelCtrl = TextEditingController();
+    final extraPriceCtrl = TextEditingController();
+    String? nameErr;
+    String? categoryErr;
+    String? ingredientErr;
+    String? hotErr;
+    String? coldErr;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setLocal) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFFF6EDDF),
+            title: const Text('Edit Product', style: TextStyle(color: Colors.black)),
+            content: SizedBox(
+              width: 900,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: Container(
+                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black87, width: 1.2)),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: p.imageUrl != null && p.imageUrl!.isNotEmpty
+                                ? Image.network(p.imageUrl!, fit: BoxFit.cover)
+                                : const Icon(Icons.image, size: 30, color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 24),
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [SizedBox(width: 180, child: _pmLabel('Name')), Expanded(child: TextField(controller: nameCtrl, decoration: _pmInputDecoration().copyWith(errorText: nameErr), onChanged: (_) => setLocal(() => nameErr = null)))]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [
+                            SizedBox(width: 180, child: _pmLabel('Category')),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange), color: Colors.white),
+                                child: Row(children: [
+                                  Expanded(child: Text(selectedCategory.isEmpty ? 'Select' : selectedCategory, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18))),
+                                  InkWell(onTap: () {
+                                    final items = _categories.where((e) => e != 'All Category').toList();
+                                    showDialog(context: context, builder: (ctx) {
+                                      return SimpleDialog(children: items.map((e) => SimpleDialogOption(onPressed: () { Navigator.pop(ctx); setLocal(() { selectedCategory = e; categoryErr = null; }); }, child: Text(e))).toList());
+                                    });
+                                  }, child: const Icon(Icons.arrow_drop_down, color: Colors.orange)),
+                                ]),
+                              ),
+                            ),
+                          ]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [SizedBox(width: 180, child: _pmLabel('Ice Level')), Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: ['NO ICE', 'LESS ICE', 'NORMAL ICE'].map((o) { final sel = iceSel.contains(o); return InkWell(onTap: () => setLocal(() { if (sel) iceSel.remove(o); else iceSel.add(o); }), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: sel ? Colors.orange[600] : Colors.orange[50], border: Border.all(color: Colors.orange), borderRadius: BorderRadius.circular(20)), child: Text(o, style: TextStyle(color: sel ? Colors.white : (Colors.orange[700] ?? Colors.orange), fontWeight: FontWeight.w700)))); }).toList()))]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [SizedBox(width: 180, child: _pmLabel('Sugar Level')), Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: ['NO SUGAR', 'LESS SUGAR', 'NORMAL SUGAR'].map((o) { final sel = sugarSel.contains(o); return InkWell(onTap: () => setLocal(() { if (sel) sugarSel.remove(o); else sugarSel.add(o); }), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: sel ? Colors.orange[600] : Colors.orange[50], border: Border.all(color: Colors.orange), borderRadius: BorderRadius.circular(20)), child: Text(o, style: TextStyle(color: sel ? Colors.white : (Colors.orange[700] ?? Colors.orange), fontWeight: FontWeight.w700)))); }).toList()))]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [SizedBox(width: 180, child: _pmLabel('Texture')), Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: ['SMOOTH', 'CREAMY', 'THICK'].map((o) { final sel = textureSel.contains(o); return InkWell(onTap: () => setLocal(() { if (sel) textureSel.remove(o); else textureSel.add(o); }), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: sel ? Colors.orange[600] : Colors.orange[50], border: Border.all(color: Colors.orange), borderRadius: BorderRadius.circular(20)), child: Text(o, style: TextStyle(color: sel ? Colors.white : (Colors.orange[700] ?? Colors.orange), fontWeight: FontWeight.w700)))); }).toList()))]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [SizedBox(width: 180, child: _pmLabel('Ingredient Names')), Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: [
+                            ...ingredientNames.asMap().entries.map((e) => Chip(label: Text(e.value), onDeleted: () => setLocal(() { ingredientNames.removeAt(e.key); }), deleteIconColor: Colors.orange[800], backgroundColor: Colors.orange[50], shape: const StadiumBorder(side: BorderSide(color: Colors.transparent)))),
+                            InkWell(onTap: () async {
+                              final snap = await FirebaseFirestore.instance.collection('ingredients').get();
+                              final items = snap.docs.map((d) => (d.data()['name'] ?? d.data()['ingredientName'] ?? '').toString()).where((v) => v.isNotEmpty).toList();
+                              final picked = await showDialog<String>(context: context, builder: (ctx) {
+                                return SimpleDialog(children: items.map((e) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx, e), child: Text(e))).toList());
+                              });
+                              if (picked != null && picked.isNotEmpty) setLocal(() => ingredientNames.add(picked));
+                            }, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text('ADD', style: TextStyle(color: Colors.orange[700] ?? Colors.orange, fontWeight: FontWeight.w700))))
+                          ]))]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              SizedBox(width: 180, child: _pmLabel('Extra Requirement')),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Expanded(child: TextField(controller: extraLabelCtrl, decoration: _pmInputDecoration())),
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: 160,
+                                      child: TextField(
+                                        controller: extraPriceCtrl,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                                        decoration: _pmInputDecoration().copyWith(prefix: const Padding(padding: EdgeInsets.only(left: 8, right: 6), child: Text('RM ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18))))
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        final label = extraLabelCtrl.text.trim();
+                                        final price = double.tryParse(extraPriceCtrl.text.trim()) ?? 0.0;
+                                        if (label.isEmpty || price <= 0) return;
+                                        setLocal(() {
+                                          extras.add({'label': label, 'price': price});
+                                          extraLabelCtrl.clear();
+                                          extraPriceCtrl.clear();
+                                        });
+                                      },
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[600], foregroundColor: Colors.white),
+                                      child: const Text('Add'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (extras.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(children: [SizedBox(width: 180, child: const SizedBox.shrink()), Expanded(child: Wrap(spacing: 8, runSpacing: 8, children: extras.asMap().entries.map((e) => Chip(label: Text('${e.value['label']} (RM ${(e.value['price'] as num).toStringAsFixed(2)})', style: TextStyle(color: Colors.orange[800])), onDeleted: () => setLocal(() { extras.removeAt(e.key); }), deleteIconColor: Colors.orange[800], backgroundColor: Colors.orange[50], shape: const StadiumBorder(side: BorderSide(color: Colors.transparent)))).toList()))]),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [SizedBox(width: 180, child: _pmLabel('Hot Price (RM)')), Expanded(child: TextField(controller: hotCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.-]'))], decoration: _pmInputDecoration().copyWith(errorText: hotErr, prefix: const Padding(padding: EdgeInsets.only(left: 8, right: 6), child: Text('RM ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)))), onChanged: (_) => setLocal(() => hotErr = null)))]),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [SizedBox(width: 180, child: _pmLabel('Cold Price (RM)')), Expanded(child: TextField(controller: coldCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], decoration: _pmInputDecoration().copyWith(errorText: coldErr, prefix: const Padding(padding: EdgeInsets.only(left: 8, right: 6), child: Text('RM ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 18)))), onChanged: (_) => setLocal(() => coldErr = null)))]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  final name = nameCtrl.text.trim();
+                  final category = selectedCategory.trim().isNotEmpty ? selectedCategory.trim() : categoryCtrl.text.trim();
+                  final hotText = hotCtrl.text.trim();
+                  final coldText = coldCtrl.text.trim();
+                  setLocal(() {
+                    nameErr = name.isEmpty ? 'Required' : null;
+                    categoryErr = category.isEmpty ? 'Required' : null;
+                    final hotVal = double.tryParse(hotText);
+                    hotErr = (hotText == '-' || (hotVal != null && hotVal > 0)) ? null : 'Required';
+                    final coldVal = double.tryParse(coldText);
+                    coldErr = (coldVal == null || coldVal <= 0) ? 'Required' : null;
+                  });
+                  if ([nameErr, categoryErr, hotErr, coldErr].any((e) => e != null)) return;
+                  try {
+                    DocumentReference<Map<String, dynamic>>? categoryRef;
+                    try {
+                      final catQuery = await FirebaseFirestore.instance.collection('productCategories').where('name', isEqualTo: category).limit(1).get();
+                      if (catQuery.docs.isEmpty) {
+                        final cdoc = FirebaseFirestore.instance.collection('productCategories').doc();
+                        await cdoc.set({'id': cdoc.id, 'name': category, 'createdAt': FieldValue.serverTimestamp()});
+                        categoryRef = cdoc;
+                      } else {
+                        categoryRef = catQuery.docs.first.reference;
+                      }
+                    } catch (_) {}
+                    await FirebaseFirestore.instance.collection('products').doc(p.id).update({
+                      'name': name,
+                      'category': categoryRef,
+                      'categoryName': category,
+                      'hotPrice': hotText == '-' ? null : double.tryParse(hotText) ?? 0.0,
+                      'coldPrice': double.tryParse(coldText) ?? 0.0,
+                      'options': {
+                        'ice': {for (final o in ['NO ICE', 'LESS ICE', 'NORMAL ICE']) o: iceSel.contains(o)},
+                        'sugar': {for (final o in ['NO SUGAR', 'LESS SUGAR', 'NORMAL SUGAR']) o: sugarSel.contains(o)},
+                        'texture': {for (final o in ['SMOOTH', 'CREAMY', 'THICK']) o: textureSel.contains(o)},
+                      },
+                      'ingredientNames': ingredientNames,
+                      'extras': {for (final e in extras) (e['label'] as String): {'price': (e['price'] as num).toDouble()}},
+                    });
+                    try {
+                      final exists = await FirebaseFirestore.instance.collection('productCategories').where('name', isEqualTo: category).limit(1).get();
+                      if (exists.docs.isEmpty) {
+                        final cdoc = FirebaseFirestore.instance.collection('productCategories').doc();
+                        await cdoc.set({'id': cdoc.id, 'name': category, 'createdAt': FieldValue.serverTimestamp()});
+                      }
+                    } catch (_) {}
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Product updated')));
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update: $e')));
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC711F), foregroundColor: Colors.white),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        });
+      },
     );
   }
 
   void _onAddProduct() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Add Product flow coming soon')),
-    );
+    context.go(AppRoutes.addProduct);
   }
 
   // Pagination helpers
