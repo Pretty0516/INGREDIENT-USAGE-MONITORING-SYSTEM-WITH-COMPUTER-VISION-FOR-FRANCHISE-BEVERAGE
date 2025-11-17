@@ -18,6 +18,7 @@ import '../screens/ingredient_management_screen.dart';
 import '../screens/add_ingredient_screen.dart';
 import '../screens/add_product_screen.dart';
 import '../screens/order_list_screen.dart';
+import '../screens/order_history_screen.dart';
 
 class AppRoutes {
   // declare all the routes for the application
@@ -35,6 +36,7 @@ class AppRoutes {
   static const String addIngredient = '/ingredient-add';
   static const String addProduct = '/product-add';
   static const String orderList = '/order-list';
+  static const String orderHistory = '/order-history';
 
   static GoRouter createRouter() {
     return GoRouter(
@@ -226,7 +228,19 @@ class AppRoutes {
         GoRoute(
           path: orderList,
           name: 'order-list',
-          builder: (context, state) => const OrderListScreen(),
+          builder: (context, state) {
+            final extra = state.extra;
+            String? editOrderId;
+            if (extra is Map<String, dynamic>) {
+              editOrderId = extra['editOrderId'] as String?;
+            }
+            return OrderListScreen(editOrderId: editOrderId);
+          },
+        ),
+        GoRoute(
+          path: orderHistory,
+          name: 'order-history',
+          builder: (context, state) => const OrderHistoryScreen(),
         ),
       ],
       errorBuilder: (context, state) => Scaffold(

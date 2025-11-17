@@ -390,7 +390,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         }
       } else {
         // If the account is not a staff account, attempt franchise owner login
-        final isWrongMethod = (staffResp.message ?? '').contains('Invalid login method for this account type');
+        final isWrongMethod = staffResp.errorCode == 'role-mismatch' || (staffResp.message ?? '').contains('Invalid login method for this account type');
         if (isWrongMethod) {
           final ownerResp = await AuthService.franchiseOwnerLogin(loginRequest);
           if (ownerResp.success) {
@@ -419,11 +419,10 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
               }
             }
           } else {
-            // Show original error message for staff login
-            final code = staffResp.errorCode ?? '';
+            final code = ownerResp.errorCode ?? '';
             String msg;
             if (code == 'account-suspended') {
-              msg = 'Your account has been suspended. Please contact your franchise owner.';
+              msg = 'Your account has been suspended. Please contact support.';
             } else if (code == 'invalid-email') {
               msg = 'Please enter a valid email address.';
             } else if (code == 'invalid-credential' || code == 'wrong-password' || code == 'user-not-found') {
@@ -431,7 +430,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             } else if (code == 'too-many-requests') {
               msg = 'Too many attempts. Try again later.';
             } else {
-              msg = staffResp.message ?? 'Incorrect email or password.';
+              msg = 'Incorrect email or password.';
             }
             if (mounted) {
               _showErrorDialog(msg);

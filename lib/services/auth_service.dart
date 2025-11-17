@@ -370,7 +370,7 @@ class AuthService {
 
       // Allow staff and supervisors to use this login
       if (userData.role != UserRole.staff && userData.role != UserRole.supervisor) {
-        return AuthResponse.error(message: 'Invalid login method for this account type');
+        return AuthResponse.error(message: 'Invalid login method for this account type', errorCode: 'role-mismatch');
       }
 
       // Block suspended accounts immediately

@@ -30,8 +30,6 @@ class RegisterStaffScreen extends StatefulWidget {
 }
 
 class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
-  // Always in editing mode to mirror edit page
-  bool _isEditing = true;
   // Editing controllers
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -539,7 +537,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
       final storagePath = 'images/$filename';
       final ref = storage.ref().child(storagePath);
       final metadata = SettableMetadata(contentType: 'image/${ext == 'jpg' ? 'jpeg' : ext}');
-      await ref.putData(bytes!, metadata);
+      await ref.putData(bytes, metadata);
       final url = await ref.getDownloadURL();
 
       setState(() {
@@ -751,10 +749,6 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     );
   }
 
-  void _cancelEdit() {
-    Navigator.of(context).maybePop();
-  }
-
   // Styled edit dropdown copied from edit page
   Widget _editDropdown({
     required GlobalKey key,
@@ -805,7 +799,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     if (ctx == null) return;
     final renderObject = ctx.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
-    final box = renderObject as RenderBox;
+    final box = renderObject;
     final size = box.size;
     final baseItems = const ['Staff', 'Supervisor'];
     final items = [_editRoleLabel, ...baseItems.where((e) => e != _editRoleLabel)];
@@ -868,7 +862,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     if (ctx == null) return;
     final renderObject = ctx.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
-    final box = renderObject as RenderBox;
+    final box = renderObject;
     final size = box.size;
     final baseItems = const ['Active', 'Pending', 'Suspended'];
     final items = [_editStatusLabel, ...baseItems.where((e) => e != _editStatusLabel)];
@@ -931,7 +925,7 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
     if (ctx == null) return;
     final renderObject = ctx.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
-    final box = renderObject as RenderBox;
+    final box = renderObject;
     final size = box.size;
     final items = <String>[_editOutletLabel];
     _outletEditOverlay = OverlayEntry(
@@ -953,9 +947,8 @@ class _RegisterStaffScreenState extends State<RegisterStaffScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: items.map((e) {
-                      final isSelected = true;
-                      final rowColor = isSelected ? Colors.orange[600] : Colors.orange[50];
-                      final textColor = isSelected ? Colors.white : (Colors.orange[700] ?? Colors.orange);
+                      final rowColor = Colors.orange[600];
+                      final textColor = Colors.white;
                       return InkWell(
                         onTap: _hideOutletEditMenu,
                         splashColor: Colors.transparent,

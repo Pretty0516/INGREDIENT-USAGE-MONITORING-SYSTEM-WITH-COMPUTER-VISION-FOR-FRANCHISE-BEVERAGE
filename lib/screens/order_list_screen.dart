@@ -95,7 +95,8 @@ class OrderItem {
 }
 
 class OrderListScreen extends StatefulWidget {
-  const OrderListScreen({super.key});
+  final String? editOrderId;
+  const OrderListScreen({super.key, this.editOrderId});
   @override
   State<OrderListScreen> createState() => _OrderListScreenState();
 }
@@ -117,6 +118,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
     'DINE IN': 1,
     'TAKE AWAY': 1,
   };
+  double? _previousTotalForEdit;
 
   List<OrderItem> get _cart => _carts[_serviceType] ?? [];
 
@@ -125,6 +127,10 @@ class _OrderListScreenState extends State<OrderListScreen> {
     super.initState();
     _subscribeProducts();
     _refreshOrderNo();
+    final eid = widget.editOrderId;
+    if (eid != null) {
+      _loadOrderForEdit(eid);
+    }
   }
 
   void _subscribeProducts() {
@@ -1001,10 +1007,16 @@ class _OrderListScreenState extends State<OrderListScreen> {
   Widget _paymentPanel() {
     final now = DateTime.now();
     final total = _total;
+    final bool isEdit = widget.editOrderId != null && _previousTotalForEdit != null;
+    final double adjustment = isEdit ? (total - _previousTotalForEdit!) : 0.0;
+    final bool isExtraCharge = isEdit && adjustment > 0;
+    final bool isRefund = isEdit && adjustment < 0;
+    final double due = isExtraCharge ? adjustment : total;
+
     double received = _paymentMethod == 'CASH'
         ? (double.tryParse(_receivedCtr.text.trim()) ?? 0.0)
-        : _total;
-    final changeRaw = (received - total).clamp(-999999.0, 999999.0);
+        : due;
+    final changeRaw = _paymentMethod == 'CASH' ? (received - due).clamp(-999999.0, 999999.0) : 0.0;
     double changeDisplay = changeRaw;
     double roundDiff = 0.0;
     if (_paymentMethod == 'CASH' && changeRaw > 0) {
@@ -1052,6 +1064,28 @@ class _OrderListScreenState extends State<OrderListScreen> {
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), spreadRadius: 1, blurRadius: 8, offset: const Offset(0, 2))]),
           child: Text('RM ${total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.red)),
         ),
+        if (widget.editOrderId != null && _previousTotalForEdit != null) ...[
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text((total - _previousTotalForEdit!) >= 0 ? 'Extra Charges' : 'Refund'),
+          Text(
+            'RM ${((total - _previousTotalForEdit!).abs()).toStringAsFixed(2)}',
+            style: TextStyle(color: (total - _previousTotalForEdit!) >= 0 ? Colors.red : Colors.green, fontWeight: FontWeight.w700),
+          ),
+        ]),
+        if ((total - _previousTotalForEdit!) < 0) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(children: [
+              const Expanded(child: SizedBox()),
+              Text(
+                'Rounded +RM ${((((_previousTotalForEdit! - total).abs() / 0.05).ceil() * 0.05) - (_previousTotalForEdit! - total).abs()).toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ]),
+          ),
+        ],
+          const SizedBox(height: 6),
+        ],
         const Text('Payment Method :'),
         const SizedBox(height: 6),
         Column(children: [
@@ -1062,7 +1096,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
           _pmOption('E-WALLET', Icons.account_balance_wallet),
         ]),
         const SizedBox(height: 10),
-        if (!_isPaid)
+        if (!_isPaid && !isRefund)
           SizedBox(
             height: 44,
             width: double.infinity,
@@ -1074,7 +1108,17 @@ class _OrderListScreenState extends State<OrderListScreen> {
               child: const Text('PAID'),
             ),
           ),
-        if (_paymentMethod == 'CASH') ...[
+        if (isRefund)
+          SizedBox(
+            height: 44,
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async { await _saveOrderToFirestore(); await _showReceiptGenerating(); },
+              style: ElevatedButton.styleFrom(backgroundColor: (Colors.orange[600] ?? Colors.orange), foregroundColor: Colors.white, textStyle: const TextStyle(fontSize: 16)),
+              child: const Text('PRINT RECEIPT'),
+            ),
+          ),
+        if (_paymentMethod == 'CASH' && !isRefund) ...[
           const SizedBox(height: 5),
           Row(children: [
             const Expanded(child: Text('Received :')),
@@ -1193,9 +1237,59 @@ class _OrderListScreenState extends State<OrderListScreen> {
     }
   }
 
+  Future<void> _loadOrderForEdit(String id) async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('orders').doc(id).get();
+      final m = snap.data();
+      if (m == null) return;
+      final service = (m['serviceType'] ?? 'DINE IN').toString();
+      final received = (m['received'] is num) ? (m['received'] as num).toDouble() : double.tryParse('${m['received']}') ?? 0.0;
+      _previousTotalForEdit = (m['total'] is num) ? (m['total'] as num).toDouble() : double.tryParse('${m['total']}');
+      final items = (m['items'] as List?) ?? const [];
+      final carts = _carts[service] ?? [];
+      carts.clear();
+      for (final it in items) {
+        if (it is Map<String, dynamic>) {
+          final pid = (it['productId'] ?? '').toString();
+          final p = _products.firstWhere((e) => e.id == pid, orElse: () => OrderProduct(
+            id: pid,
+            name: (it['productName'] ?? '').toString(),
+            category: '',
+            hotPrice: (it['unitPrice'] is num) ? (it['unitPrice'] as num).toDouble() : 0.0,
+            coldPrice: (it['unitPrice'] is num) ? (it['unitPrice'] as num).toDouble() : 0.0,
+            imageUrl: null,
+            optionsIce: const {},
+            optionsSugar: const {},
+            optionsTexture: const {},
+            extras: const {},
+            ingredientNames: (it['ingredients'] is List) ? (it['ingredients'] as List).map((e) => '$e').toList() : <String>[],
+            hasHot: true,
+          ));
+          carts.add(OrderItem(
+            product: p,
+            isHot: ((it['temperature'] ?? 'ICE') == 'HOT'),
+            ice: (it['ice'] as String?),
+            sugar: (it['sugar'] as String?),
+            texture: (it['texture'] as String?),
+            extras: (it['extras'] is List) ? (it['extras'] as List).map((e) => '$e').toList() : const [],
+            qty: (it['qty'] is num) ? (it['qty'] as num).toInt() : int.tryParse('${it['qty']}') ?? 1,
+          ));
+        }
+      }
+      setState(() {
+        _serviceType = service;
+        _orderNo = (m['orderNo'] is num) ? (m['orderNo'] as num).toInt() : int.tryParse('${m['orderNo']}') ?? _orderNo;
+        _paymentMethod = (m['paymentMethod'] ?? 'CASH').toString();
+        _receivedCtr.text = received.toString();
+        _carts[service] = carts;
+        _isPaymentPanel = false;
+        _orderSaved = false;
+      });
+    } catch (_) {}
+  }
+
   Future<void> _saveOrderToFirestore() async {
     if (_orderSaved) return;
-    await _refreshOrderNo();
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final staffId = auth.currentUser?.id;
     final staffName = auth.currentUser?.fullName;
@@ -1235,26 +1329,88 @@ class _OrderListScreenState extends State<OrderListScreen> {
       'unitPrice': it.unitPrice,
       'total': it.total,
     }).toList();
-    final doc = {
-      'orderNo': _orderNo,
-      'serviceType': _serviceType,
-      'status': 'PENDING',
-      'createdAt': Timestamp.now(),
-      'staffId': staffId,
-      'staffName': staffName,
-      'franchiseId': franchiseId,
-      'paymentMethod': _paymentMethod,
-      'received': received,
-      'change': changeDisplay,
-      'subtotal': _subtotal,
-      'tax': _tax,
-      'total': _total,
-      'items': items,
-    };
-    await FirebaseFirestore.instance.collection('orders').add(doc);
+
+    if (widget.editOrderId != null && widget.editOrderId!.isNotEmpty) {
+      double previousTotal = 0.0;
+      try {
+        final prevSnap = await FirebaseFirestore.instance.collection('orders').doc(widget.editOrderId!).get();
+        final pm = prevSnap.data();
+        if (pm != null) {
+          previousTotal = (pm['total'] is num) ? (pm['total'] as num).toDouble() : double.tryParse('${pm['total']}') ?? 0.0;
+        }
+      } catch (_) {}
+      double effDue = _total - previousTotal;
+      double receivedAdj = received;
+      double changeAdj = 0.0;
+      if (effDue > 0) {
+        final raw = (receivedAdj - effDue).clamp(-999999.0, 999999.0);
+        changeAdj = raw;
+        if (_paymentMethod == 'CASH' && raw > 0) {
+          final ip = raw.floorToDouble();
+          final frac = raw - ip;
+          final baseStart = (frac / 0.10).floor() * 0.10;
+          final t = frac - baseStart;
+          double tAdj = t;
+          if (t > 0 && t <= 0.07) {
+            tAdj = 0.05;
+          } else if (t > 0.07 && t <= 0.09) {
+            tAdj = 0.10;
+          }
+          double fracAdj = baseStart + tAdj;
+          if (fracAdj >= 1.0) {
+            changeAdj = ip + 1.0;
+          } else {
+            changeAdj = ip + fracAdj;
+          }
+          changeAdj = double.parse(changeAdj.toStringAsFixed(2));
+        }
+      } else {
+        receivedAdj = 0.0;
+        changeAdj = 0.0;
+      }
+
+      final updates = {
+        'serviceType': _serviceType,
+        'staffId': staffId,
+        'staffName': staffName,
+        'franchiseId': franchiseId,
+        'paymentMethod': _paymentMethod,
+        'received': receivedAdj,
+        'change': changeAdj,
+        'subtotal': _subtotal,
+        'tax': _tax,
+        'total': _total,
+        'items': items,
+        'previousTotal': previousTotal,
+        'adjustment': _total - previousTotal,
+      };
+      await FirebaseFirestore.instance.collection('orders').doc(widget.editOrderId!).update(updates);
+    } else {
+      await _refreshOrderNo();
+      final doc = {
+        'orderNo': _orderNo,
+        'serviceType': _serviceType,
+        'status': 'PENDING',
+        'createdAt': Timestamp.now(),
+        'staffId': staffId,
+        'staffName': staffName,
+        'franchiseId': franchiseId,
+        'paymentMethod': _paymentMethod,
+        'received': received,
+        'change': changeDisplay,
+        'subtotal': _subtotal,
+        'tax': _tax,
+        'total': _total,
+        'items': items,
+      };
+      await FirebaseFirestore.instance.collection('orders').add(doc);
+      setState(() {
+        _orderCounters[_serviceType] = (_orderCounters[_serviceType] ?? 0) + 1;
+      });
+    }
+
     setState(() {
       _orderSaved = true;
-      _orderCounters[_serviceType] = (_orderCounters[_serviceType] ?? 0) + 1;
     });
   }
 
