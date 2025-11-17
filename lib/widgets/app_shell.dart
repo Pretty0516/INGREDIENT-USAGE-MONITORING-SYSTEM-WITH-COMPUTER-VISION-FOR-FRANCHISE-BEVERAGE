@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../routes/app_routes.dart';
 import '../providers/auth_provider.dart';
+import '../models/user_model.dart';
 
 class AppShell extends StatefulWidget {
   final Widget body;
@@ -46,14 +47,17 @@ class _AppShellState extends State<AppShell> {
                     onPressed: () => setState(() => _isSideNavOpen = !_isSideNavOpen),
                   ),
                 if (isLaptop) const SizedBox(width: 8),
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: Colors.green[100],
-                  child: Text(
-                    _initials(currentUserModel?.firstName, currentUserModel?.lastName),
-                    style: TextStyle(
-                      color: Colors.green[700],
-                      fontWeight: FontWeight.bold,
+                InkWell(
+                  onTap: () => context.push(AppRoutes.personalProfile),
+                  child: CircleAvatar(
+                    radius: 22,
+                    backgroundColor: Colors.green[100],
+                    child: Text(
+                      _initials(currentUserModel?.firstName, currentUserModel?.lastName),
+                      style: TextStyle(
+                        color: Colors.green[700],
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -142,12 +146,12 @@ class _AppShellState extends State<AppShell> {
           children: [
             _navItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: _goToOrderList),
             _navItem(Icons.history, 'Order History', active: widget.activeItem == 'Order History', onTap: _goToOrderHistory),
-            _navItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
-          _navItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
-          _navItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
-            _navItem(Icons.inventory_2, 'Inventory', active: widget.activeItem == 'Inventory', onTap: () {}),
-            _navItem(Icons.health_and_safety, 'Hygiene', active: widget.activeItem == 'Hygiene', onTap: () {}),
-            _navItem(Icons.bar_chart, 'Report', active: widget.activeItem == 'Report', onTap: () {}),
+            if (_canAccessStaff()) _navItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
+            if (_canAccessProduct()) _navItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
+            if (_canAccessIngredient()) _navItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
+            if (_canAccessInventory()) _navItem(Icons.inventory_2, 'Inventory', active: widget.activeItem == 'Inventory', onTap: _goToInventory),
+            _navItem(Icons.health_and_safety, 'Hygiene', active: widget.activeItem == 'Hygiene', onTap: _goToHygiene),
+            if (_canAccessReport()) _navItem(Icons.bar_chart, 'Report', active: widget.activeItem == 'Report', onTap: _goToReport),
           ],
         ),
       ),
@@ -183,18 +187,47 @@ class _AppShellState extends State<AppShell> {
           const SizedBox(height: 12),
           _sideNavItem(Icons.list_alt, 'Order List', active: widget.activeItem == 'Order List', onTap: _goToOrderList),
           _sideNavItem(Icons.history, 'Order History', active: widget.activeItem == 'Order History', onTap: _goToOrderHistory),
-          _sideNavItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
-          _sideNavItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
-          _sideNavItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
-          _sideNavItem(Icons.inventory_2, 'Inventory', active: widget.activeItem == 'Inventory', onTap: () {}),
-          _sideNavItem(Icons.health_and_safety, 'Hygiene', active: widget.activeItem == 'Hygiene', onTap: () {}),
-          _sideNavItem(Icons.bar_chart, 'Report', active: widget.activeItem == 'Report', onTap: () {}),
+          if (_canAccessStaff()) _sideNavItem(Icons.people, 'Staff', active: widget.activeItem == 'Staff', onTap: _goToStaff),
+          if (_canAccessProduct()) _sideNavItem(Icons.local_offer, 'Product', active: widget.activeItem == 'Product', onTap: _goToProduct),
+          if (_canAccessIngredient()) _sideNavItem(Icons.kitchen, 'Ingredient', active: widget.activeItem == 'Ingredient', onTap: _goToIngredient),
+          if (_canAccessInventory()) _sideNavItem(Icons.inventory_2, 'Inventory', active: widget.activeItem == 'Inventory', onTap: _goToInventory),
+          _sideNavItem(Icons.health_and_safety, 'Hygiene', active: widget.activeItem == 'Hygiene', onTap: _goToHygiene),
+          if (_canAccessReport()) _sideNavItem(Icons.bar_chart, 'Report', active: widget.activeItem == 'Report', onTap: _goToReport),
         ],
       ),
     );
   }
   
+  bool _canAccessStaff() {
+    final role = context.read<AuthProvider>().currentUser?.role;
+    return role == UserRole.franchiseOwner || role == UserRole.supervisor;
+  }
+
+  bool _canAccessProduct() {
+    final role = context.read<AuthProvider>().currentUser?.role;
+    return role == UserRole.franchiseOwner;
+  }
+
+  bool _canAccessIngredient() {
+    final role = context.read<AuthProvider>().currentUser?.role;
+    return role == UserRole.franchiseOwner;
+  }
+
+  bool _canAccessInventory() {
+    final role = context.read<AuthProvider>().currentUser?.role;
+    return role == UserRole.franchiseOwner || role == UserRole.supervisor;
+  }
+
+  bool _canAccessReport() {
+    final role = context.read<AuthProvider>().currentUser?.role;
+    return role == UserRole.franchiseOwner || role == UserRole.supervisor;
+  }
+
   void _goToStaff() {
+    if (!_canAccessStaff()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Access restricted')));
+      return;
+    }
     final authProvider = context.read<AuthProvider>();
     final fid = authProvider.currentUser?.franchiseId;
     if (fid != null && fid.isNotEmpty) {
@@ -207,11 +240,27 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _goToProduct() {
+    if (!_canAccessProduct()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Access restricted')));
+      return;
+    }
     context.go(AppRoutes.productManagement);
   }
 
   void _goToIngredient() {
+    if (!_canAccessIngredient()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Access restricted')));
+      return;
+    }
     context.go(AppRoutes.ingredientManagement);
+  }
+
+  void _goToInventory() {
+    if (!_canAccessInventory()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Access restricted')));
+      return;
+    }
+    context.go(AppRoutes.inventory);
   }
 
   void _goToOrderList() {
@@ -220,6 +269,18 @@ class _AppShellState extends State<AppShell> {
 
   void _goToOrderHistory() {
     context.go(AppRoutes.orderHistory);
+  }
+
+  void _goToHygiene() {
+    context.go(AppRoutes.hygieneCompliance);
+  }
+
+  void _goToReport() {
+    if (!_canAccessReport()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Access restricted')));
+      return;
+    }
+    context.go(AppRoutes.reportDashboard);
   }
 
   // side navigation bar item

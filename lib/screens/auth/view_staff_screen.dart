@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:typed_data';
-import 'dart:html' as html;
+
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -681,43 +681,20 @@ class _ViewStaffScreenState extends State<ViewStaffScreen> {
       Uint8List? bytes;
       String ext = 'jpg';
 
-      if (kIsWeb) {
-        // Fallback for web when file_picker plugin fails to initialize
-        final input = html.FileUploadInputElement()..accept = 'image/*';
-        input.click();
-        await input.onChange.first;
-        final html.File? webFile = input.files?.first;
-        if (webFile == null) return;
-        final reader = html.FileReader();
-        reader.readAsArrayBuffer(webFile);
-        await reader.onLoad.first;
-        final result = reader.result;
-        if (result is ByteBuffer) {
-          bytes = Uint8List.view(result);
-        } else if (result is Uint8List) {
-          bytes = result;
-        } else {
-          throw StateError('Unexpected reader result: ${result.runtimeType}');
-        }
-        final name = webFile.name;
-        final dot = name.lastIndexOf('.');
-        ext = (dot != -1 ? name.substring(dot + 1) : 'jpg').toLowerCase();
-      } else {
-        final result = await FilePicker.platform.pickFiles(
-          type: FileType.image,
-          withData: true,
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.first;
+      bytes = file.bytes;
+      if (bytes == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to read selected image bytes')),
         );
-        if (result == null || result.files.isEmpty) return;
-        final file = result.files.first;
-        bytes = file.bytes;
-        if (bytes == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Unable to read selected image bytes')),
-          );
-          return;
-        }
-        ext = (file.extension ?? 'jpg').toLowerCase();
+        return;
       }
+      ext = (file.extension ?? 'jpg').toLowerCase();
 
       final filename = '${_staff.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
       setState(() {

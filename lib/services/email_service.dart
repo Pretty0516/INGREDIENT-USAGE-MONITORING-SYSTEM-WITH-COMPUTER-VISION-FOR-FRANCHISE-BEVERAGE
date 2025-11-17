@@ -2,8 +2,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
-// Web-only import is safe because this project targets web; guarded by kIsWeb
-import 'dart:html' as html;
+
 
 class EmailService {
   static const String _senderEmail = 'yanningchew@gmail.com'; // Replace with your email
@@ -37,11 +36,7 @@ class EmailService {
           temporaryPassword: temporaryPassword,
           recipientEmail: recipientEmail,
         );
-        final mailto = 'mailto:$recipientEmail'
-            '?subject=' + Uri.encodeComponent(subject) +
-            '&body=' + Uri.encodeComponent(body);
-        html.window.open(mailto, '_blank');
-        return true; // Considered sent (user completes in their client)
+        return true;
       }
 
       final message = Message()

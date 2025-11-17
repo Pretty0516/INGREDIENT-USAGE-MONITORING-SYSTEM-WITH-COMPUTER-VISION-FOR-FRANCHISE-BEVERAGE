@@ -207,7 +207,7 @@ class DashboardScreen extends StatelessWidget {
                           title: 'Inventory',
                           subtitle: 'Manage ingredients',
                           color: Colors.orange,
-                          onTap: () => _showComingSoon(context),
+                          onTap: () => context.go(AppRoutes.inventory),
                         ),
                         _buildActionCard(
                           context,

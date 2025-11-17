@@ -11,7 +11,7 @@ import '../screens/auth/phone_verification_screen.dart';
 import '../screens/auth/password_update_screen.dart';
 import '../screens/auth/verify_account_screen.dart';
 import '../screens/splash_screen.dart';
-import '../screens/dashboard_screen.dart';
+
 import '../screens/suspended_screen.dart';
 import '../screens/product_management_screen.dart';
 import '../screens/ingredient_management_screen.dart';
@@ -19,6 +19,11 @@ import '../screens/add_ingredient_screen.dart';
 import '../screens/add_product_screen.dart';
 import '../screens/order_list_screen.dart';
 import '../screens/order_history_screen.dart';
+import '../screens/inventory_screen.dart';
+import '../screens/spoilage_report_screen.dart';
+import '../screens/hygiene_compliance_screen.dart';
+import '../screens/report_dashboard_screen.dart';
+import '../screens/personal_profile_screen.dart';
 
 class AppRoutes {
   // declare all the routes for the application
@@ -37,6 +42,11 @@ class AppRoutes {
   static const String addProduct = '/product-add';
   static const String orderList = '/order-list';
   static const String orderHistory = '/order-history';
+  static const String inventory = '/inventory';
+  static const String spoilageReport = '/spoilage-report';
+  static const String hygieneCompliance = '/hygiene';
+  static const String reportDashboard = '/report';
+  static const String personalProfile = '/profile';
 
   static GoRouter createRouter() {
     return GoRouter(
@@ -96,7 +106,7 @@ class AppRoutes {
                   return '$staffManagement?franchiseId=$fid';
                 }
               }
-              return dashboard;
+              return orderList;
             }
             // Keep login accessible to allow unified login/logout screen across devices
             return null;
@@ -180,7 +190,7 @@ class AppRoutes {
         GoRoute(
           path: dashboard,
           name: 'dashboard',
-          builder: (context, state) => const DashboardScreen(),
+          builder: (context, state) => OrderListScreen(),
         ),
         GoRoute(
           path: suspended,
@@ -241,6 +251,31 @@ class AppRoutes {
           path: orderHistory,
           name: 'order-history',
           builder: (context, state) => const OrderHistoryScreen(),
+        ),
+        GoRoute(
+          path: inventory,
+          name: 'inventory',
+          builder: (context, state) => const InventoryScreen(),
+        ),
+        GoRoute(
+          path: spoilageReport,
+          name: 'spoilage-report',
+          builder: (context, state) => const SpoilageReportScreen(),
+        ),
+        GoRoute(
+          path: hygieneCompliance,
+          name: 'hygiene',
+          builder: (context, state) => const HygieneComplianceScreen(),
+        ),
+        GoRoute(
+          path: reportDashboard,
+          name: 'report',
+          builder: (context, state) => const ReportDashboardScreen(),
+        ),
+        GoRoute(
+          path: personalProfile,
+          name: 'profile',
+          builder: (context, state) => const PersonalProfileScreen(),
         ),
       ],
       errorBuilder: (context, state) => Scaffold(

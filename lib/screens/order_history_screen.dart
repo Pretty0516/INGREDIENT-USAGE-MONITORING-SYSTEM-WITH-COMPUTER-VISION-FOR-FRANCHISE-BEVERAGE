@@ -171,11 +171,11 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   }
 
   String _formatDate(DateTime? d) {
-    if (d == null) return 'Select';
-    final y = d.year.toString().padLeft(4, '0');
-    final m = d.month.toString().padLeft(2, '0');
+    if (d == null) return '';
     final dd = d.day.toString().padLeft(2, '0');
-    return '$y-$m-$dd';
+    final mm = d.month.toString().padLeft(2, '0');
+    final yyyy = d.year.toString().padLeft(4, '0');
+    return '$dd/$mm/$yyyy';
   }
 
   Future<void> _pickFromDate() async {
@@ -585,10 +585,20 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                         const SizedBox(height: 6),
                         SizedBox(
                           width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _pickFromDate,
-                            style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.orange[600]!), foregroundColor: Colors.orange[600], backgroundColor: Colors.white),
-                            child: Text(_formatDate(_fromDate)),
+                          child: TextField(
+                            controller: TextEditingController(text: _formatDate(_fromDate)),
+                            readOnly: true,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(8)), borderSide: BorderSide(color: Colors.orange[600]!)),
+                              enabledBorder: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(8)), borderSide: BorderSide(color: Colors.orange[600]!)),
+                              focusedBorder: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(8)), borderSide: BorderSide(color: Colors.orange[600]!, width: 2)),
+                              suffixIcon: IconButton(
+                                icon: Icon(Icons.calendar_today, size: 18, color: Colors.orange[600]),
+                                onPressed: _pickFromDate,
+                              ),
+                            ),
                           ),
                         ),
                       ]),
@@ -601,10 +611,20 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                         const SizedBox(height: 6),
                         SizedBox(
                           width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _pickToDate,
-                            style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.orange[600]!), foregroundColor: Colors.orange[600], backgroundColor: Colors.white),
-                            child: Text(_formatDate(_toDate)),
+                          child: TextField(
+                            controller: TextEditingController(text: _formatDate(_toDate)),
+                            readOnly: true,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(8)), borderSide: BorderSide(color: Colors.orange[600]!)),
+                              enabledBorder: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(8)), borderSide: BorderSide(color: Colors.orange[600]!)),
+                              focusedBorder: OutlineInputBorder(borderRadius: const BorderRadius.all(Radius.circular(8)), borderSide: BorderSide(color: Colors.orange[600]!, width: 2)),
+                              suffixIcon: IconButton(
+                                icon: Icon(Icons.calendar_today, size: 18, color: Colors.orange[600]),
+                                onPressed: _pickToDate,
+                              ),
+                            ),
                           ),
                         ),
                       ]),

@@ -58,6 +58,10 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
   @override
   void initState() {
     super.initState();
+    final role = context.read<AuthProvider>().currentUser?.role;
+    if (role == UserRole.supervisor) {
+      _selectedRole = 'Staff';
+    }
     _loadFranchiseData();
     _loadStaffMembers();
   }
@@ -1263,7 +1267,11 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
           Text('Outlet', style: labelStyle ?? const TextStyle(fontSize: 12, color: Colors.orange)),
           const SizedBox(height: 6),
           GestureDetector(
-            onTap: _showOutletMenu,
+            onTap: () {
+              final role = context.read<AuthProvider>().currentUser?.role;
+              if (role == UserRole.supervisor) return;
+              _showOutletMenu();
+            },
             child: CompositedTransformTarget(
               link: _outletLink,
               child: Container(
@@ -1383,7 +1391,11 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
           Text('Roles', style: labelStyle ?? const TextStyle(fontSize: 12, color: Colors.orange)),
           const SizedBox(height: 6),
           GestureDetector(
-            onTap: _showRolesMenu,
+            onTap: () {
+              final role = context.read<AuthProvider>().currentUser?.role;
+              if (role == UserRole.supervisor) return;
+              _showRolesMenu();
+            },
             child: CompositedTransformTarget(
               link: _rolesLink,
               child: Container(

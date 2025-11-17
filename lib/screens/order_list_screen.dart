@@ -107,6 +107,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
   String _selectedCategory = 'All';
   String _temperature = 'ALL';
   bool _loading = false;
+  final Set<String> _unavailableIngredientNames = <String>{};
   final Map<String, List<OrderItem>> _carts = {
     'DINE IN': [],
     'TAKE AWAY': [],
@@ -126,6 +127,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
   void initState() {
     super.initState();
     _subscribeProducts();
+    _subscribeUnavailableIngredients();
     _refreshOrderNo();
     final eid = widget.editOrderId;
     if (eid != null) {
@@ -172,7 +174,23 @@ class _OrderListScreenState extends State<OrderListScreen> {
     } else if (_temperature == 'ICE') {
       list = list.where((p) => p.coldPrice > 0);
     }
+
     return list.toList();
+  }
+
+  void _subscribeUnavailableIngredients() {
+    FirebaseFirestore.instance.collection('ingredients').snapshots().listen((snap) {
+      final names = <String>{};
+      for (final d in snap.docs) {
+        final m = d.data();
+        final name = (m['name'] ?? '').toString();
+        final stock = (m['stockQuantity'] is num) ? (m['stockQuantity'] as num).toDouble() : double.tryParse('${m['stockQuantity'] ?? 0}') ?? 0.0;
+        if (name.isNotEmpty && stock <= 0) names.add(name);
+      }
+      setState(() => _unavailableIngredientNames
+        ..clear()
+        ..addAll(names));
+    });
   }
 
   List<OrderProduct> _paginate(List<OrderProduct> input) {
@@ -233,6 +251,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
     final pages = ((total + _pageSize - 1) ~/ _pageSize).clamp(1, 9999);
     final displayed = _paginate(filtered);
     final isBottomNav = MediaQuery.of(context).size.width < 1024;
+    final hasUnavailable = filtered.any((p) => p.ingredientNames.any((n) => _unavailableIngredientNames.contains(n)));
     return AppShell(
       activeItem: 'Order List',
       body: Row(
@@ -302,6 +321,13 @@ class _OrderListScreenState extends State<OrderListScreen> {
                 children: [
                   Row(children: [
                     Expanded(child: Text('Products', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700))),
+                    if (hasUnavailable) ...[
+                      const SizedBox(width: 12),
+                      Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(2))),
+                      const SizedBox(width: 6),
+                      const Text('Not Available', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 12),
+                    ],
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(children: List.generate(pages, (i) {
@@ -337,13 +363,25 @@ class _OrderListScreenState extends State<OrderListScreen> {
                         itemCount: filtered.length,
                         itemBuilder: (context, i) {
                           final p = filtered[i];
+                          final isUnavailable = p.ingredientNames.any((n) => _unavailableIngredientNames.contains(n));
                           return InkWell(
-                            onTap: () => _showProductSelectDialog(p),
+                            onTap: isUnavailable ? null : () => _showProductSelectDialog(p),
                             child: Container(
-                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), spreadRadius: 1, blurRadius: 8, offset: const Offset(0, 2))], border: Border.all(color: Colors.orange)),
+                              decoration: BoxDecoration(
+                                color: isUnavailable ? Colors.red.shade50 : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), spreadRadius: 1, blurRadius: 8, offset: const Offset(0, 2))],
+                                border: Border.all(color: isUnavailable ? Colors.red : Colors.orange),
+                              ),
                               alignment: Alignment.center,
                               padding: const EdgeInsets.all(8),
-                              child: Text(p.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(p.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                                  const SizedBox.shrink(),
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -465,11 +503,17 @@ class _OrderListScreenState extends State<OrderListScreen> {
     String? selTexture;
     final Set<String> selExtras = {};
     bool isHot = false;
+    final isUnavailable = p.ingredientNames.any((n) => _unavailableIngredientNames.contains(n));
     return StatefulBuilder(builder: (context, setLocal) {
       return Container(
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), spreadRadius: 1, blurRadius: 8, offset: const Offset(0, 2))]),
+        decoration: BoxDecoration(
+          color: isUnavailable ? Colors.red.shade50 : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), spreadRadius: 1, blurRadius: 8, offset: const Offset(0, 2))],
+          border: Border.all(color: isUnavailable ? Colors.red : Colors.orange),
+        ),
         child: Row(
           children: [
             SizedBox(width: 80, height: 60, child: p.imageUrl != null && p.imageUrl!.isNotEmpty ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(p.imageUrl!, fit: BoxFit.cover)) : Center(child: Icon(Icons.local_cafe, size: 32, color: Colors.grey[600]))),
@@ -477,6 +521,14 @@ class _OrderListScreenState extends State<OrderListScreen> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(p.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                if (isUnavailable) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(color: Colors.orange[50], border: Border.all(color: Colors.orange), borderRadius: BorderRadius.circular(8)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: const [Icon(Icons.lock, size: 16, color: Colors.orange), SizedBox(width: 6), Text('Not Available', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w700))]),
+                  ),
+                ],
                 const SizedBox(height: 8),
         
                 const SizedBox(height: 6),
@@ -487,9 +539,9 @@ class _OrderListScreenState extends State<OrderListScreen> {
                 ]),
                 const SizedBox(height: 6),
                 Row(children: [
-                  Expanded(child: _chipsGroup(iceList, selIce, (v) => setLocal(() => selIce = v))),
-                  Expanded(child: _chipsGroup(sugarList, selSugar, (v) => setLocal(() => selSugar = v))),
-                  Expanded(child: _chipsGroup(textureList, selTexture, (v) => setLocal(() => selTexture = v))),
+                  Expanded(child: _chipsGroup(iceList, selIce, isUnavailable ? (_) {} : (v) => setLocal(() => selIce = v))),
+                  Expanded(child: _chipsGroup(sugarList, selSugar, isUnavailable ? (_) {} : (v) => setLocal(() => selSugar = v))),
+                  Expanded(child: _chipsGroup(textureList, selTexture, isUnavailable ? (_) {} : (v) => setLocal(() => selTexture = v))),
                 ]),
                 if (extrasList.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -557,7 +609,7 @@ class _OrderListScreenState extends State<OrderListScreen> {
                   height: 36,
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => _addToCart(p, isHot: isHot, ice: selIce, sugar: selSugar, texture: selTexture, extras: selExtras.toList()),
+                    onPressed: isUnavailable ? null : () => _addToCart(p, isHot: isHot, ice: selIce, sugar: selSugar, texture: selTexture, extras: selExtras.toList()),
                     style: ElevatedButton.styleFrom(backgroundColor: (Colors.orange[600] ?? Colors.orange), foregroundColor: Colors.white),
                     child: const Text('ADD'),
                   ),
