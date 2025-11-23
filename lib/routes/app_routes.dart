@@ -10,6 +10,7 @@ import '../screens/auth/staff_login_screen.dart';
 import '../screens/auth/phone_verification_screen.dart';
 import '../screens/auth/password_update_screen.dart';
 import '../screens/auth/verify_account_screen.dart';
+import '../screens/auth/email_otp_screen.dart';
 import '../screens/splash_screen.dart';
 
 import '../screens/suspended_screen.dart';
@@ -34,6 +35,7 @@ class AppRoutes {
   static const String phoneVerification = '/phone-verification';
   static const String passwordUpdate = '/password-update';
   static const String verifyAccount = '/verify-account';
+  static const String emailOtp = '/email-otp';
   static const String dashboard = '/dashboard';
   static const String suspended = '/suspended';
   static const String productManagement = '/product-management';
@@ -63,7 +65,7 @@ class AppRoutes {
 
         // If user is not authenticated, redirect to login
         if (!authProvider.isAuthenticated) {
-          if (currentLocation != login && currentLocation != franchiseOwnerRegistration && currentLocation != verifyAccount) {
+          if (currentLocation != login && currentLocation != franchiseOwnerRegistration && currentLocation != verifyAccount && currentLocation != emailOtp && currentLocation != passwordUpdate) {
             return login;
           }
           return null;
@@ -79,12 +81,9 @@ class AppRoutes {
             return null;
           }
 
-          // If needs phone verification
-          if (!devBypass && authProvider.needsPhoneVerification) {
-            if (currentLocation != phoneVerification) {
-              return phoneVerification;
-            }
-            return null;
+          // Skip phone verification for all roles; send authenticated users to role landing
+          if (currentLocation == login || currentLocation == splash || currentLocation == phoneVerification) {
+            return authProvider.isFranchiseOwner ? reportDashboard : orderList;
           }
 
           // If needs password update
@@ -95,20 +94,11 @@ class AppRoutes {
             return null;
           }
 
-          // If fully setup, redirect away from setup flows but allow login for logout
+          // If fully setup, redirect away from phone verification to role landing
           if (authProvider.isFullySetup || devBypass) {
-            if (currentLocation == phoneVerification || 
-                currentLocation == passwordUpdate) {
-              // Franchise owners land on Staff Management; staff on Dashboard
-              if (authProvider.isFranchiseOwner) {
-                final fid = authProvider.currentUser?.franchiseId;
-                if (fid != null && fid.isNotEmpty) {
-                  return '$staffManagement?franchiseId=$fid';
-                }
-              }
-              return orderList;
+            if (currentLocation == phoneVerification) {
+              return authProvider.isFranchiseOwner ? reportDashboard : orderList;
             }
-            // Keep login accessible to allow unified login/logout screen across devices
             return null;
           }
         }
@@ -169,16 +159,21 @@ class AppRoutes {
           builder: (context, state) {
             final authProvider = Provider.of<AuthProvider>(context, listen: false);
             final user = authProvider.currentUser;
-            
-            if (user == null) {
-              return const Scaffold(
-                body: Center(child: Text('User not found')),
+            if (user != null) {
+              return PasswordUpdateScreen(
+                userId: user.id,
+                email: user.email,
               );
             }
-            
+            final qpEmail = state.uri.queryParameters['email'] ?? '';
+            if (qpEmail.isEmpty) {
+              return const Scaffold(
+                body: Center(child: Text('Email is required')),
+              );
+            }
             return PasswordUpdateScreen(
-              userId: user.id,
-              email: user.email,
+              userId: '',
+              email: qpEmail,
             );
           },
         ),
@@ -186,6 +181,17 @@ class AppRoutes {
           path: verifyAccount,
           name: 'verify-account',
           builder: (context, state) => const VerifyAccountScreen(),
+        ),
+        GoRoute(
+          path: emailOtp,
+          name: 'email-otp',
+          builder: (context, state) {
+            final email = state.uri.queryParameters['email'] ?? '';
+            if (email.isEmpty) {
+              return const Scaffold(body: Center(child: Text('Email is required')));
+            }
+            return EmailOtpScreen(email: email);
+          },
         ),
         GoRoute(
           path: dashboard,

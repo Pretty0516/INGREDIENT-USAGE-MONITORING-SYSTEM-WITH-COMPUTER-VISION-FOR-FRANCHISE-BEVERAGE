@@ -2,14 +2,47 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
+import 'package:http/http.dart' as http;
 
 
 class EmailService {
-  static const String _senderEmail = 'yanningchew@gmail.com'; // Replace with your email
-  static const String _senderPassword = 'aitu leul pfrw sgve'; // Replace with app password
-  static const String _senderName = 'Ingredient Usage Monitoring System';
+  static const String _senderEmail = 'yanningchew@gmail.com';
+  static const String _senderPassword = 'wozc kcmv qoyu mzok';
+  static const String _senderName = 'Ingredient Usage Monitoring Systen';
+  static const String _emailSenderUrlEnv = String.fromEnvironment('EMAIL_SENDER_URL', defaultValue: '');
+  static const String _otpBaseEnv = String.fromEnvironment('OTP_BASE_URL', defaultValue: '');
+  static const String _defaultBase = 'http://localhost:8081';
+  static String get _emailSenderUrl {
+    if (_emailSenderUrlEnv.isNotEmpty) return _emailSenderUrlEnv;
+    final base = _otpBaseEnv.isNotEmpty ? _otpBaseEnv : _defaultBase;
+    return '$base/relayEmail';
+  }
 
-  static SmtpServer get _smtpServer => gmail(_senderEmail, _senderPassword);
+  static SmtpServer get _smtpServer => gmail(_senderEmail, _senderPassword.replaceAll(' ', ''));
+
+  static Future<bool> _sendViaHttpEmail({
+    required String to,
+    required String subject,
+    required String html,
+  }) async {
+    if (_emailSenderUrl.isEmpty) return false;
+    try {
+      final res = await http.post(
+        Uri.parse(_emailSenderUrl),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: '{"to":"$to","subject":"$subject","html":${_escapeJsonString(html)}}',
+      );
+      return res.statusCode >= 200 && res.statusCode < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static String _escapeJsonString(String s) {
+    return '"' + s.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n').replaceAll('\r', '\\r') + '"';
+  }
 
   /// Generates a secure temporary password
   static String generateTemporaryPassword({int length = 12}) {
@@ -26,17 +59,18 @@ class EmailService {
     required String temporaryPassword,
   }) async {
     try {
-      // On Flutter Web, raw SMTP sockets are not available.
-      // Open the user's email client with a prefilled message instead.
       if (kIsWeb) {
-        final subject = 'Welcome to $franchiseName - Your Account Details';
-        final body = _buildTemporaryPasswordEmailPlaintext(
-          staffName: staffName,
-          franchiseName: franchiseName,
-          temporaryPassword: temporaryPassword,
-          recipientEmail: recipientEmail,
+        final ok = await _sendViaHttpEmail(
+          to: recipientEmail,
+          subject: 'Welcome to $franchiseName - Your Account Details',
+          html: _buildTemporaryPasswordEmailTemplate(
+            staffName: staffName,
+            franchiseName: franchiseName,
+            temporaryPassword: temporaryPassword,
+            recipientEmail: recipientEmail,
+          ),
         );
-        return true;
+        return ok;
       }
 
       final message = Message()
@@ -67,6 +101,19 @@ class EmailService {
     String? franchiseContactEmail,
   }) async {
     try {
+      if (kIsWeb) {
+        final ok = await _sendViaHttpEmail(
+          to: recipientEmail,
+          subject: 'Verify Recent Login Attempts',
+          html: _buildSuspiciousLoginEmailTemplate(
+            staffName: staffName,
+            franchiseName: franchiseName,
+            recipientEmail: recipientEmail,
+            franchiseContactEmail: franchiseContactEmail,
+          ),
+        );
+        return ok;
+      }
       final message = Message()
         ..from = Address(_senderEmail, _senderName)
         ..recipients.add(recipientEmail)
@@ -153,6 +200,14 @@ class EmailService {
     required String staffName,
   }) async {
     try {
+      if (kIsWeb) {
+        final ok = await _sendViaHttpEmail(
+          to: recipientEmail,
+          subject: 'Complete Your Account Setup - Phone Verification Required',
+          html: _buildPhoneVerificationReminderTemplate(staffName: staffName),
+        );
+        return ok;
+      }
       final message = Message()
         ..from = Address(_senderEmail, _senderName)
         ..recipients.add(recipientEmail)
@@ -175,6 +230,17 @@ class EmailService {
     required String franchiseName,
   }) async {
     try {
+      if (kIsWeb) {
+        final ok = await _sendViaHttpEmail(
+          to: recipientEmail,
+          subject: 'Account Activated - Welcome to $franchiseName!',
+          html: _buildAccountActivationTemplate(
+            staffName: staffName,
+            franchiseName: franchiseName,
+          ),
+        );
+        return ok;
+      }
       final message = Message()
         ..from = Address(_senderEmail, _senderName)
         ..recipients.add(recipientEmail)
@@ -391,6 +457,61 @@ class EmailService {
                 <p>This email was sent from the Ingredient Usage Monitoring System</p>
             </div>
         </div>
+    </body>
+    </html>
+    ''';
+  }
+  static Future<bool> sendEmailOtp({
+    required String recipientEmail,
+    required String code,
+  }) async {
+    try {
+      if (kIsWeb) {
+        final ok = await _sendViaHttpEmail(
+          to: recipientEmail,
+          subject: 'Your Verification Code',
+          html: _buildEmailOtpTemplate(code: code),
+        );
+        return ok;
+      }
+      final message = Message()
+        ..from = Address(_senderEmail, _senderName)
+        ..recipients.add(recipientEmail)
+        ..subject = 'Your Verification Code'
+        ..html = _buildEmailOtpTemplate(code: code);
+      await send(message, _smtpServer);
+      return true;
+    } catch (e) {
+      debugPrint('Error sending OTP email: $e');
+      return false;
+    }
+  }
+
+  static String _buildEmailOtpTemplate({required String code}) {
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Verification Code</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #DC711F; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background-color: #F6EDDF; }
+        .code { font-size: 32px; font-weight: bold; letter-spacing: 8px; text-align: center; color: #333; padding: 16px; background:#fff; border-radius:12px; border: 2px solid #DC711F; }
+        .hint { color: #555; text-align:center; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header"><h1>Verification Code</h1></div>
+        <div class="content">
+          <p class="hint">Use the code below to verify your account. This code will expire in 5 minutes.</p>
+          <div class="code">$code</div>
+        </div>
+      </div>
     </body>
     </html>
     ''';

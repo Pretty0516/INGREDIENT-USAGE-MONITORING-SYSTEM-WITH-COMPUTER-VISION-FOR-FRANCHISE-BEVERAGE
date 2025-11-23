@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
+import '../../routes/app_routes.dart';
 
 class VerifyAccountScreen extends StatefulWidget {
   const VerifyAccountScreen({super.key});
@@ -101,13 +102,18 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
     setState(() {
       _showPhoneChecklist = false;
     });
-    final res = await AuthService.requestPasswordReset(value);
+    final res = await AuthService.sendEmailVerificationCode(value);
 
     setState(() {
       _isSubmitting = false;
       _message = res.message;
       _isError = !res.success;
     });
+
+    if (res.success && mounted) {
+      final encoded = Uri.encodeComponent(value);
+      context.go('${AppRoutes.emailOtp}?email=$encoded');
+    }
   }
 
   @override

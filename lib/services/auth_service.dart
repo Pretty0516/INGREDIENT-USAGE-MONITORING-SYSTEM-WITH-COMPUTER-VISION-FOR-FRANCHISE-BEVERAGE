@@ -2,8 +2,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 
 import '../models/user_model.dart';
 import '../models/franchise_model.dart';
@@ -32,6 +36,7 @@ class AuthService {
   static const String _usersCollection = 'users';
   static const String _franchisesCollection = 'franchises';
   static const String _verificationCollection = 'phone_verifications';
+  static const String _emailVerificationCollection = 'email_verifications';
 
   /// Get current user
   static User? get currentUser => _auth.currentUser;
@@ -210,15 +215,21 @@ class AuthService {
       final temporaryPassword = EmailService.generateTemporaryPassword();
       final hashedPassword = _hashPassword(temporaryPassword);
 
-      // Create staff user document (without Firebase Auth initially)
-      final staffId = _uuid.v4();
+      // Create Firebase Auth user immediately (skip phone verification path)
+      final userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: temporaryPassword,
+      );
+      final staffUid = userCredential.user!.uid;
+
+      // Create staff user document with ACTIVE status
       final staffUser = UserModel(
-        id: staffId,
+        id: staffUid,
         email: email,
         firstName: firstName,
         lastName: lastName,
         role: UserRole.staff,
-        status: UserStatus.pending,
+        status: UserStatus.active,
         franchiseId: franchiseId,
         createdAt: DateTime.now(),
         isTemporaryPassword: true,
@@ -232,11 +243,11 @@ class AuthService {
         'franchise': franchiseRef,
         'id': franchiseId,
       };
-      await _firestore.collection(_usersCollection).doc(staffId).set(staffMap);
+      await _firestore.collection(_usersCollection).doc(staffUid).set(staffMap);
 
       // Update franchise staff list
       await _firestore.collection(_franchisesCollection).doc(franchiseId).update({
-        'staffIds': FieldValue.arrayUnion([staffId]),
+        'staffIds': FieldValue.arrayUnion([staffUid]),
       });
 
       // Get franchise data for email
@@ -253,16 +264,16 @@ class AuthService {
 
       if (!emailSent) {
         // Rollback if email failed
-        await _firestore.collection(_usersCollection).doc(staffId).delete();
+        await _firestore.collection(_usersCollection).doc(staffUid).delete();
         await _firestore.collection(_franchisesCollection).doc(franchiseId).update({
-          'staffIds': FieldValue.arrayRemove([staffId]),
+          'staffIds': FieldValue.arrayRemove([staffUid]),
         });
         return AuthResponse.error(message: 'Failed to send email. Registration cancelled.');
       }
 
       return AuthResponse.success(
         message: 'Staff member registered successfully. Email sent with login credentials.',
-        data: {'staffId': staffId},
+        data: {'staffId': staffUid, 'temporaryPassword': temporaryPassword},
       );
     } catch (e) {
       return AuthResponse.error(message: 'Staff registration failed: $e');
@@ -692,6 +703,15 @@ class AuthService {
         return AuthResponse.error(message: 'Passwords do not match');
       }
 
+      final hashedNew = _hashPassword(request.newPassword);
+      // Check previous hashed password (temporary or last saved)
+      final existingDoc = await _firestore.collection(_usersCollection).doc(user.uid).get();
+      final md = (existingDoc.data()?['metadata'] as Map<String, dynamic>?) ?? {};
+      final prevHash = (md['hashedTempPassword'] ?? md['hashedPassword']) as String?;
+      if (prevHash != null && prevHash == hashedNew) {
+        return AuthResponse.error(message: 'Password reuse is restricted. Enter a different password.');
+      }
+
       // Re-authenticate with current password
       final credential = EmailAuthProvider.credential(
         email: user.email!,
@@ -705,7 +725,9 @@ class AuthService {
       await _firestore.collection(_usersCollection).doc(user.uid).update({
         'status': UserStatus.active.toString().split('.').last,
         'isTemporaryPassword': false,
-        'metadata': FieldValue.delete(),
+        'metadata.hashedPassword': hashedNew,
+        'metadata.lastPasswordUpdatedAt': Timestamp.fromDate(DateTime.now()),
+        'metadata.hashedTempPassword': FieldValue.delete(),
       });
 
       // Get user data for email
@@ -737,6 +759,107 @@ class AuthService {
     }
   }
 
+  static Future<AuthResponse> updatePasswordUnauthed({required String email, required PasswordUpdateRequest request}) async {
+    try {
+      if (!request.passwordsMatch) {
+        return AuthResponse.error(message: 'Passwords do not match');
+      }
+      final qs = await _firestore
+          .collection(_usersCollection)
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (qs.docs.isEmpty) {
+        return AuthResponse.error(message: 'Account not found');
+      }
+      final userDocBefore = qs.docs.first;
+      final mdBefore = (userDocBefore.data()['metadata'] as Map<String, dynamic>?) ?? {};
+      final prevHash = (mdBefore['hashedTempPassword'] ?? mdBefore['hashedPassword']) as String?;
+      final hashedNew = _hashPassword(request.newPassword);
+      if (prevHash != null && prevHash == hashedNew) {
+        return AuthResponse.error(message: 'Password reuse is restricted. Enter a different password.');
+      }
+
+      final userCredential = await _auth.signInWithEmailAndPassword(email: email, password: request.currentPassword);
+      final user = userCredential.user!;
+      await user.updatePassword(request.newPassword);
+      await _firestore.collection(_usersCollection).doc(user.uid).update({
+        'status': UserStatus.active.toString().split('.').last,
+        'isTemporaryPassword': false,
+        'metadata.hashedPassword': hashedNew,
+        'metadata.lastPasswordUpdatedAt': Timestamp.fromDate(DateTime.now()),
+        'metadata.hashedTempPassword': FieldValue.delete(),
+      });
+
+      final userDoc = await _firestore.collection(_usersCollection).doc(user.uid).get();
+      final userData = UserModel.fromMap(userDoc.data()!);
+      final franchiseDoc = await _firestore.collection(_franchisesCollection).doc(userData.franchiseId!).get();
+      final franchise = FranchiseModel.fromMap(franchiseDoc.data()!);
+      await EmailService.sendAccountActivationEmail(
+        recipientEmail: userData.email,
+        staffName: userData.fullName,
+        franchiseName: franchise.name,
+      );
+      await _auth.signOut();
+      return AuthResponse.success(
+        message: 'Password updated successfully. Account is now active.',
+        data: {'accountActivated': true},
+      );
+    } on FirebaseAuthException catch (e) {
+      return AuthResponse.error(
+        message: _getAuthErrorMessage(e.code),
+        errorCode: e.code,
+      );
+    } catch (e) {
+      return AuthResponse.error(message: 'Password update failed: $e');
+    }
+  }
+
+  static Future<AuthResponse> updatePasswordViaOtp({required String email, required String newPassword}) async {
+    try {
+      // Compare against previous hash in Firestore
+      final qs = await _firestore.collection(_usersCollection).where('email', isEqualTo: email).limit(1).get();
+      if (qs.docs.isEmpty) {
+        return AuthResponse.error(message: 'Account not found');
+      }
+      final data = qs.docs.first.data();
+      final md = (data['metadata'] as Map<String, dynamic>?) ?? {};
+      final prevHash = (md['hashedTempPassword'] ?? md['hashedPassword']) as String?;
+      final hashedNew = _hashPassword(newPassword);
+      if (prevHash != null && prevHash == hashedNew) {
+        return AuthResponse.error(message: 'Password reuse is restricted. Enter a different password.');
+      }
+      
+      final bases = kIsWeb
+          ? ['http://localhost:8081']
+          : (Platform.isAndroid
+              ? ['http://10.0.2.2:8081', 'http://localhost:8081']
+              : ['http://localhost:8081']);
+      Object? lastError;
+      for (final b in bases) {
+        try {
+          final url = Uri.parse('$b/resetPasswordDirect');
+          final resp = await http
+              .post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode({'email': email, 'newPassword': newPassword}))
+              .timeout(const Duration(seconds: 8));
+          if (resp.statusCode == 200) {
+            try {
+              await _auth.signInWithEmailAndPassword(email: email, password: newPassword);
+            } catch (_) {}
+            return AuthResponse.success(message: 'Password updated successfully. Account is now active.');
+          }
+          lastError = 'HTTP ${resp.statusCode}: ${resp.body}';
+        } catch (e) {
+          lastError = e;
+          continue;
+        }
+      }
+      return AuthResponse.error(message: 'Failed to update password: $lastError');
+    } catch (e) {
+      return AuthResponse.error(message: 'Failed to update password: $e');
+    }
+  }
+
   /// Sign out
   static Future<void> signOut() async {
     await _auth.signOut();
@@ -762,16 +885,28 @@ class AuthService {
       }
 
       if (isEmail) {
-        // Check existence by email in Firestore users collection
-        final qs = await _firestore
+        // Check existence across known collections
+        bool existsInFirestore = false;
+        final primary = await _firestore
             .collection(_usersCollection)
             .where('email', isEqualTo: input)
             .limit(1)
             .get();
-        if (qs.docs.isEmpty) {
+        if (primary.docs.isNotEmpty) {
+          existsInFirestore = true;
+        } else {
+          const fallbacks = ['staff2', 'staff', 'employees'];
+          for (final col in fallbacks) {
+            final q = await _firestore.collection(col).where('email', isEqualTo: input).limit(1).get();
+            if (q.docs.isNotEmpty) {
+              existsInFirestore = true;
+              break;
+            }
+          }
+        }
+        if (!existsInFirestore) {
           return AuthResponse.error(message: 'This account does not exist');
         }
-        // Send reset link
         await _auth.sendPasswordResetEmail(email: input);
         return AuthResponse.success(message: 'Your account exists, a reset link has been sent');
       }
@@ -795,6 +930,98 @@ class AuthService {
       return AuthResponse.success(message: 'Your account exists, a reset link has been sent');
     } catch (e) {
       return AuthResponse.error(message: 'Failed to process request: $e');
+    }
+  }
+
+  static String _generateOtp({int length = 6}) {
+    final rand = Random();
+    final digits = List.generate(length, (_) => rand.nextInt(10)).join();
+    return digits;
+  }
+
+  static Future<AuthResponse> sendEmailVerificationCode(String email) async {
+    try {
+      final input = email.trim();
+      if (input.isEmpty) {
+        return AuthResponse.error(message: 'Please enter your email address');
+      }
+      bool existsInFirestore = false;
+      final primary = await _firestore
+          .collection(_usersCollection)
+          .where('email', isEqualTo: input)
+          .limit(1)
+          .get();
+      if (primary.docs.isNotEmpty) {
+        existsInFirestore = true;
+      } else {
+        const fallbacks = ['staff2', 'staff', 'employees'];
+        for (final col in fallbacks) {
+          final q = await _firestore.collection(col).where('email', isEqualTo: input).limit(1).get();
+          if (q.docs.isNotEmpty) {
+            existsInFirestore = true;
+            break;
+          }
+        }
+      }
+      if (!existsInFirestore) {
+        return AuthResponse.error(message: 'This account does not exist');
+      }
+
+      final code = _generateOtp(length: 6);
+      final expiresAt = Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 5)));
+      await _firestore.collection(_emailVerificationCollection).doc(input).set({
+        'code': code,
+        'expiresAt': expiresAt,
+        'createdAt': Timestamp.fromDate(DateTime.now()),
+        'status': 'pending',
+        'attempts': 0,
+        'userId': _auth.currentUser?.uid,
+      });
+      bool ok = false;
+      try {
+        ok = await EmailService.sendEmailOtp(recipientEmail: input, code: code);
+      } catch (_) {
+        ok = false;
+      }
+      final msg = ok
+          ? 'Verification code sent to $input'
+          : 'Email delivery failed. Use the code shown on the next screen.';
+      return AuthResponse.success(message: msg);
+    } catch (e) {
+      return AuthResponse.error(message: 'Failed to send code: $e');
+    }
+  }
+
+  static Future<AuthResponse> verifyEmailCode({required String email, required String code}) async {
+    try {
+      final doc = await _firestore.collection(_emailVerificationCollection).doc(email).get();
+      if (!doc.exists) {
+        return AuthResponse.error(message: 'Code not found');
+      }
+      final data = doc.data()!;
+      final stored = (data['code'] ?? '') as String;
+      final expiresAt = (data['expiresAt'] as Timestamp?)?.toDate();
+      if (expiresAt == null || DateTime.now().isAfter(expiresAt)) {
+        return AuthResponse.error(message: 'Code expired');
+      }
+      if (stored != code) {
+        await _firestore.collection(_emailVerificationCollection).doc(email).update({
+          'attempts': FieldValue.increment(1),
+        });
+        return AuthResponse.error(message: 'Invalid code');
+      }
+      await _firestore.collection(_emailVerificationCollection).doc(email).update({
+        'status': 'verified',
+      });
+      final user = _auth.currentUser;
+      if (user != null) {
+        await _firestore.collection(_usersCollection).doc(user.uid).update({
+          'metadata.emailOtpVerified': true,
+        });
+      }
+      return AuthResponse.success(message: 'Verification successful');
+    } catch (e) {
+      return AuthResponse.error(message: 'Verification failed: $e');
     }
   }
 

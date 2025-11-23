@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
 import 'package:form_builder_validators/form_builder_validators.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:go_router/go_router.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+
+import '../../routes/app_routes.dart';
 
 import '../../services/auth_service.dart';
 import '../../models/auth_models.dart';
@@ -37,285 +42,146 @@ class _PasswordUpdateScreenState extends State<PasswordUpdateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text('Update Password'),
-        backgroundColor: Colors.green[600],
-        foregroundColor: Colors.white,
-        elevation: 0,
-        automaticallyImplyLeading: false, // Prevent going back
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 20),
-              
-              // Header Section
-              Center(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: Colors.green[100],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Icon(
-                        Icons.lock_reset,
-                        size: 40,
-                        color: Colors.green[600],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Create Secure Password',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[800],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Replace your temporary password with a secure one',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Colors.grey[600],
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 40),
-              
-              // Password Update Form
-              Container(
-                padding: const EdgeInsets.all(24.0),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: FormBuilder(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Password Information',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey[800],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      
-                      // Current Password
-                      FormBuilderTextField(
-                        name: 'currentPassword',
-                        decoration: InputDecoration(
-                          labelText: 'Current Temporary Password',
-                          hintText: 'Enter your temporary password',
-                          prefixIcon: const Icon(Icons.lock_outlined),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureCurrentPassword ? Icons.visibility_off : Icons.visibility,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscureCurrentPassword = !_obscureCurrentPassword;
-                              });
-                            },
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                        ),
-                        validator: FormBuilderValidators.compose([
-                          FormBuilderValidators.required(),
-                        ]),
-                        obscureText: _obscureCurrentPassword,
-                        textInputAction: TextInputAction.next,
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // New Password
-                      FormBuilderTextField(
-                        name: 'newPassword',
-                        decoration: InputDecoration(
-                          labelText: 'New Password',
-                          hintText: 'Create a strong password',
-                          prefixIcon: const Icon(Icons.lock),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscureNewPassword = !_obscureNewPassword;
-                              });
-                            },
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                        ),
-                        validator: FormBuilderValidators.compose([
-                          FormBuilderValidators.required(),
-                          FormBuilderValidators.minLength(8),
-                          (value) {
-                            if (value == null || value.isEmpty) return null;
-                            if (!_hasUppercase || !_hasLowercase || !_hasNumber || !_hasSpecialChar) {
-                              return 'Password must meet all security requirements';
-                            }
-                            return null;
-                          },
-                        ]),
-                        obscureText: _obscureNewPassword,
-                        textInputAction: TextInputAction.next,
-                        onChanged: _checkPasswordStrength,
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // Confirm Password
-                      FormBuilderTextField(
-                        name: 'confirmPassword',
-                        decoration: InputDecoration(
-                          labelText: 'Confirm New Password',
-                          hintText: 'Re-enter your new password',
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscureConfirmPassword = !_obscureConfirmPassword;
-                              });
-                            },
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                        ),
-                        validator: FormBuilderValidators.compose([
-                          FormBuilderValidators.required(),
-                          (value) {
-                            final newPassword = _formKey.currentState?.fields['newPassword']?.value;
-                            if (value != newPassword) {
-                              return 'Passwords do not match';
-                            }
-                            return null;
-                          },
-                        ]),
-                        obscureText: _obscureConfirmPassword,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _handleUpdatePassword(),
-                      ),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Password Strength Indicator
-                      _buildPasswordStrengthIndicator(),
-                      
-                      const SizedBox(height: 24),
-                      
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _handleUpdatePassword,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green[600],
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: _isLoading
-                              ? const SpinKitThreeBounce(
-                                  color: Colors.white,
-                                  size: 20,
-                                )
-                              : const Text(
-                                  'Update Password',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ],
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/background_image.png',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [Color(0xFFFFF3E6), Color(0xFFFFE5CC)])
                   ),
-                ),
+                );
+              },
+            ),
+          ),
+          Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 520),
+              padding: const EdgeInsets.symmetric(vertical: 28.0, horizontal: 24.0),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF6EDDF),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 24, spreadRadius: 2, offset: const Offset(0, 8)),
+                ],
               ),
-              
-              const SizedBox(height: 24),
-              
-              // Security Tips
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20.0),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
+              child: FormBuilder(
+                key: _formKey,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Icon(Icons.security, color: Colors.blue[600], size: 20),
-                        const SizedBox(width: 8),
+                        Image.asset('assets/images/logo.png', height: 44, errorBuilder: (_, __, ___) => const SizedBox()),
+                        const SizedBox(width: 12),
                         Text(
-                          'Password Security Tips',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.blue[800],
-                          ),
+                          'RESET PASSWORD',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.black87,
+                                fontSize: 50,
+                              ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Text(
-                      '• Use a unique password for this account\n'
-                      '• Don\'t share your password with anyone\n'
-                      '• Consider using a password manager\n'
-                      '• Update your password regularly',
-                      style: TextStyle(
-                        color: Colors.blue[700],
-                        fontSize: 14,
+                      'Hi ${widget.email.isNotEmpty ? widget.email : ''}, kindly enter your new password below.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: const Color(0xFFDC711F)),
+                      textAlign: TextAlign.center,
+                    ),
+                  const SizedBox(height: 20),
+                    // Removed current password field per requirements
+                    FormBuilderTextField(
+                      name: 'newPassword',
+                      decoration: InputDecoration(
+                        labelText: 'Password :',
+                        hintText: 'Enter new password',
+                        prefixIcon: const Icon(Icons.lock),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscureNewPassword ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
+                        ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        filled: true,
+                        fillColor: const Color(0xFFFFF3E6),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black)),
+                        labelStyle: const TextStyle(color: Colors.black),
+                        prefixIconColor: Colors.black,
+                        suffixIconColor: Colors.black,
+                      ),
+                      validator: FormBuilderValidators.compose([
+                        FormBuilderValidators.required(),
+                        FormBuilderValidators.minLength(8),
+                      ]),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Colors.black),
+                      obscureText: _obscureNewPassword,
+                      textInputAction: TextInputAction.next,
+                      cursorColor: Colors.black,
+                    ),
+                    const SizedBox(height: 16),
+                    FormBuilderTextField(
+                      name: 'confirmPassword',
+                      decoration: InputDecoration(
+                        labelText: 'Confirm Password :',
+                        hintText: 'Re-enter new password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                        ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        filled: true,
+                        fillColor: const Color(0xFFFFF3E6),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.black)),
+                        labelStyle: const TextStyle(color: Colors.black),
+                        prefixIconColor: Colors.black,
+                        suffixIconColor: Colors.black,
+                      ),
+                      validator: FormBuilderValidators.compose([
+                        FormBuilderValidators.required(),
+                        (value) {
+                          final newPassword = _formKey.currentState?.fields['newPassword']?.value;
+                          if (value != newPassword) {
+                            return 'Passwords do not match';
+                          }
+                          return null;
+                        },
+                      ]),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Colors.black),
+                      obscureText: _obscureConfirmPassword,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _handleUpdatePassword(),
+                      cursorColor: Colors.black,
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _handleUpdatePassword,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange[600],
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: _isLoading
+                            ? const SpinKitThreeBounce(color: Colors.white, size: 20)
+                            : const Text('RESET', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w600)),
                       ),
                     ),
                   ],
                 ),
               ),
-              
-              const SizedBox(height: 40),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -396,13 +262,14 @@ class _PasswordUpdateScreenState extends State<PasswordUpdateScreen> {
     try {
       final formData = _formKey.currentState!.value;
       
-      final request = PasswordUpdateRequest(
-        currentPassword: formData['currentPassword'],
-        newPassword: formData['newPassword'],
-        confirmPassword: formData['confirmPassword'],
-      );
+      final newPassword = formData['newPassword'];
+      final confirmPassword = formData['confirmPassword'];
 
-      final response = await AuthService.updatePassword(request);
+      if (newPassword != confirmPassword) {
+        throw Exception('Passwords do not match');
+      }
+
+      final response = await AuthService.updatePasswordViaOtp(email: widget.email, newPassword: newPassword);
 
       if (response.success) {
         if (mounted) {
@@ -419,19 +286,19 @@ class _PasswordUpdateScreenState extends State<PasswordUpdateScreen> {
                 ],
               ),
               content: const Text(
-                'Your password has been updated successfully. You can now access the application with your new password.',
+                'Your password has been updated successfully. You can now access with your new password.',
               ),
               actions: [
                 ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).pop(); // Close dialog
-                    Navigator.pushReplacementNamed(context, '/dashboard');
+                    Navigator.of(context).pop();
+                    context.go(AppRoutes.orderList);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green[600],
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text('Continue to App'),
+                  child: const Text('Back to Login'),
                 ),
               ],
             ),
@@ -442,18 +309,43 @@ class _PasswordUpdateScreenState extends State<PasswordUpdateScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceFirst('Exception: ', '')),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showErrorDialog(e.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFFF6EDDF),
+        title: const Text(
+          'Error',
+          style: TextStyle(color: Colors.black),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC711F),
+              foregroundColor: Colors.white,
+              textStyle: const TextStyle(fontSize: 18),
+            ),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 }

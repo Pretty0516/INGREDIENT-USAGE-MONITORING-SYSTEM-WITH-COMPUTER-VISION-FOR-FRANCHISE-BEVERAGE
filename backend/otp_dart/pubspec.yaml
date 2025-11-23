@@ -1,0 +1,16 @@
+name: otp_dart_backend
+description: Dart backend for OTP sending and verification
+version: 0.1.0
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  shelf: ^1.4.1
+  shelf_router: ^1.1.4
+  shelf_cors_headers: ^0.1.5
+  googleapis: ^13.2.0
+  googleapis_auth: ^1.6.0
+  mailer: ^6.0.1
+  crypto: ^3.0.3
+  uuid: ^4.4.0
+dev_dependencies:
+  lints: ^5.0.0

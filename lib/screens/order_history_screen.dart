@@ -383,7 +383,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     return Container(
       width: 360,
       padding: const EdgeInsets.all(12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           const Text('Order No : ', style: TextStyle(fontSize: 16)),
           Text('#${('${m['orderNo'] ?? ''}').toString().padLeft(4, '0')}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
@@ -458,7 +458,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
           ]),
         ],
         const SizedBox(height: 10),
-        const Spacer(),
+        const SizedBox(height: 12),
         if (((m['status'] ?? '').toString().toUpperCase() == 'PENDING')) ...[
           SizedBox(
             width: double.infinity,
@@ -492,7 +492,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             ),
           ),
         ],
-      ]),
+      ])),
     );
   }
 

@@ -65,6 +65,7 @@ dependencies:
   
   # Email functionality
   mailer: ^6.1.2
+  url_launcher: ^6.3.0
   
   # Utilities
   crypto: ^3.0.5

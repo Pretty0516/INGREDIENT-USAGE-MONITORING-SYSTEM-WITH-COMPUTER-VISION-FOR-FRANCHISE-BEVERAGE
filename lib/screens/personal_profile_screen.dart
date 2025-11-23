@@ -272,6 +272,25 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await context.read<AuthProvider>().signOut();
+                      if (mounted) context.go(AppRoutes.login);
+                    },
+                    icon: const Icon(Icons.logout, color: Colors.white, size: 22),
+                    label: const Text('LOG OUT'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5, fontSize: 18),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

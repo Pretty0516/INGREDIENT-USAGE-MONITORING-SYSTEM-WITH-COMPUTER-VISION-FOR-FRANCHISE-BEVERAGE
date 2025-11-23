@@ -180,9 +180,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isStaff => _currentUser?.role == UserRole.staff;
   bool get isFranchiseOwner => _currentUser?.role == UserRole.franchiseOwner;
   
-  bool get needsPhoneVerification => !_devBypass && (
-      _currentUser?.status == UserStatus.pending || 
-      _currentUser?.status == UserStatus.emailVerified);
+  bool get needsPhoneVerification => false;
   
   bool get needsPasswordUpdate => !_devBypass && (
       _currentUser?.status == UserStatus.phoneVerified);
