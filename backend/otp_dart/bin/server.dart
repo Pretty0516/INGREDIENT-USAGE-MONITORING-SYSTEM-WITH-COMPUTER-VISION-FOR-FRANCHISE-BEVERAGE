@@ -327,9 +327,18 @@ void main(List<String> args) async {
     ..post('/resetPasswordDirect', _resetPasswordDirect)
     ..options('/resetPasswordDirect', (Request _) => Response(204));
 
+  final corsAll = createMiddleware(
+    responseHandler: (Response resp) => resp.change(headers: {
+      ...resp.headers,
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Origin, Content-Type, Accept',
+    }),
+  );
+
   final handler = const Pipeline()
       .addMiddleware(logRequests())
-      .addMiddleware(corsHeaders())
+      .addMiddleware(corsAll)
       .addHandler(router);
 
   final port = int.tryParse(Platform.environment['PORT'] ?? '8081') ?? 8081;

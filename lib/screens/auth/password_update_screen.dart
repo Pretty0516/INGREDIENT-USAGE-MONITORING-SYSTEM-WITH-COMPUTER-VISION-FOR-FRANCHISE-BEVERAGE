@@ -273,36 +273,10 @@ class _PasswordUpdateScreenState extends State<PasswordUpdateScreen> {
 
       if (response.success) {
         if (mounted) {
-          // Show success dialog
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.green[600]),
-                  const SizedBox(width: 8),
-                  const Text('Success!'),
-                ],
-              ),
-              content: const Text(
-                'Your password has been updated successfully. You can now access with your new password.',
-              ),
-              actions: [
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    context.go(AppRoutes.orderList);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[600],
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Back to Login'),
-                ),
-              ],
-            ),
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Password reset successful. Signing in...')), 
           );
+          context.go(AppRoutes.orderList);
         }
       } else {
         throw Exception(response.message ?? 'Failed to update password');
